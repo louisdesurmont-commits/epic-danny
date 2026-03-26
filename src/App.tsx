@@ -91,7 +91,10 @@ declare global {
         Sheets: Record<string, unknown>;
       };
       utils: {
-        sheet_to_json: (sheet: unknown) => Record<string, unknown>[];
+        sheet_to_json: (
+          sheet: unknown,
+          options?: { header?: number }
+        ) => Record<string, unknown>[] | unknown[][];
       };
     };
   }
@@ -177,6 +180,15 @@ const STORAGE_KEYS = {
   movements: "oai_movements",
 } as const;
 
+const OT_COLS = {
+  boutiqueName: 0,
+  boutiqueCode: 1,
+  sku: 2,
+  name: 3,
+  receptionDate: 4,
+  qty: 5,
+} as const;
+
 function max0(n: number): number {
   return n < 0 ? 0 : n;
 }
@@ -216,16 +228,17 @@ function parseCSV(text: string): Record<string, string>[] {
   if (lines.length === 0) return [];
 
   const separator = lines[0].includes(";") ? ";" : ",";
-  const headers = lines[0].split(separator).map((header) => header.trim());
 
-  return lines.slice(1).map((line) => {
+  return lines.map((line) => {
     const values = line.split(separator).map((value) => value.trim());
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index] ?? "";
-    });
-    return row;
+    return Object.fromEntries(
+      values.map((value, index) => [String(index), value])
+    );
   });
+}
+
+function getCellByIndex(row: Record<string, unknown>, index: number): string {
+  return String(row[String(index)] ?? "").trim();
 }
 
 function NavButton(props: {
@@ -498,7 +511,10 @@ export default function App() {
           const workbook = window.XLSX.read(result, { type: "binary" });
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
-          rows = window.XLSX.utils.sheet_to_json(sheet);
+          rows = window.XLSX.utils.sheet_to_json(sheet) as Record<
+            string,
+            unknown
+          >[];
         } else {
           rows = parseCSV(String(result));
         }
@@ -513,13 +529,14 @@ export default function App() {
             row["Numéro d'article"] ??
               row["Numero d'article"] ??
               row["sku"] ??
+              row["2"] ??
               ""
           ).trim();
           const name = String(
-            row["Nom du produit"] ?? row["name"] ?? ""
+            row["Nom du produit"] ?? row["name"] ?? row["3"] ?? ""
           ).trim();
           const unitsPerCase = Number(
-            row["Nb unité / colis"] ?? row["unitsPerCase"] ?? 1
+            row["Nb unité / colis"] ?? row["unitsPerCase"] ?? row["4"] ?? 1
           );
 
           if (!sku || !name) return null;
@@ -578,9 +595,11 @@ export default function App() {
         const stock = fridgeStock
           .filter((row) => row.sku === product.sku)
           .reduce((sum, row) => sum + row.qty, 0);
+
         const ot = incomingBySku[product.sku] ?? 0;
         const target = product.targets.Ven;
         const need = max0(target + ot - stock);
+
         return {
           id: `DL-${product.sku}`,
           sku: product.sku,
@@ -600,64 +619,87 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx");
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+
+    if (!isXlsx && !isCsv) {
+      alert("Format non supporté. Merci d'importer un fichier .csv ou .xlsx");
+      event.target.value = "";
+      return;
+    }
+
+    if (isXlsx && !window.XLSX) {
+      alert(
+        "Import XLSX indisponible : la librairie Excel n'est pas chargée dans l'application."
+      );
+      event.target.value = "";
+      return;
+    }
+
     const reader = new FileReader();
+
+    reader.onerror = () => {
+      alert("Erreur de lecture du fichier.");
+      event.target.value = "";
+    };
+
     reader.onload = (loadEvent) => {
       const result = loadEvent.target?.result;
-      if (!result) return;
+      if (!result) {
+        alert("Le fichier est vide ou illisible.");
+        event.target.value = "";
+        return;
+      }
 
       let rows: Record<string, unknown>[] = [];
+
       try {
-        if (file.name.toLowerCase().endsWith(".xlsx") && window.XLSX) {
+        if (isXlsx && window.XLSX) {
           const workbook = window.XLSX.read(result, { type: "binary" });
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
-          rows = window.XLSX.utils.sheet_to_json(sheet);
+          const xlsxRows = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+          }) as unknown[][];
+
+          rows = xlsxRows.map((row) =>
+            Object.fromEntries(
+              (Array.isArray(row) ? row : []).map((cell, index) => [
+                String(index),
+                cell,
+              ])
+            )
+          );
         } else {
           rows = parseCSV(String(result));
         }
       } catch (error) {
         console.error("OT import error", error);
+        alert("Impossible de lire ce fichier.");
+        event.target.value = "";
         return;
       }
 
-      const importedOrders: TransferOrderLine[] = rows
+      if (rows.length === 0) {
+        alert("Aucune ligne détectée dans le fichier.");
+        event.target.value = "";
+        return;
+      }
+
+      const dataRows = rows.slice(1);
+
+      const importedOrders: TransferOrderLine[] = dataRows
         .map((row) => {
-          const boutiqueName = String(
-            row["Nom exploitation"] ?? row["nom exploitation"] ?? ""
-          ).trim();
-          const boutiqueCode = String(
-            row["code de la boutique"] ??
-              row["Code de la boutique"] ??
-              row["code boutique"] ??
-              ""
-          ).trim();
-          const sku = String(
-            row["numéro d'article"] ??
-              row["Numéro d'article"] ??
-              row["numero d'article"] ??
-              ""
-          ).trim();
-          const name = String(
-            row["nom produit"] ??
-              row["Nom produit"] ??
-              row["Nom du produit"] ??
-              ""
-          ).trim();
-          const receptionDate = String(
-            row["date de réception de l'oT"] ??
-              row["date de réception de l'OT"] ??
-              row["Date de réception de l'OT"] ??
-              row["date reception"] ??
-              ""
-          ).trim();
-          const qty = Number(
-            row["quantité OT"] ??
-              row["Quantité OT"] ??
-              row["quantite OT"] ??
-              row["qty"] ??
-              0
-          );
+          const boutiqueName = getCellByIndex(row, OT_COLS.boutiqueName);
+          const boutiqueCode = getCellByIndex(row, OT_COLS.boutiqueCode);
+          const sku = getCellByIndex(row, OT_COLS.sku);
+          const name = getCellByIndex(row, OT_COLS.name);
+          const receptionDate = getCellByIndex(row, OT_COLS.receptionDate);
+          const qtyRaw = getCellByIndex(row, OT_COLS.qty);
+          const qty = Number(qtyRaw.replace(",", "."));
+
           if (!boutiqueName || !boutiqueCode || !sku || !name) return null;
+
           return {
             id: uid("OT"),
             boutiqueName,
@@ -670,12 +712,22 @@ export default function App() {
         })
         .filter((row): row is TransferOrderLine => row !== null && row.qty > 0);
 
+      if (importedOrders.length === 0) {
+        console.log("Première ligne brute :", rows[0]);
+        console.log("Première ligne de données :", dataRows[0]);
+        alert("Aucune ligne exploitable trouvée dans le fichier.");
+        event.target.value = "";
+        return;
+      }
+
       setTransferOrders(importedOrders);
       regenerateDefrostNeeds(importedOrders);
+
+      alert(`${importedOrders.length} ligne(s) OT importée(s).`);
       event.target.value = "";
     };
 
-    if (file.name.toLowerCase().endsWith(".xlsx")) {
+    if (isXlsx) {
       reader.readAsBinaryString(file);
     } else {
       reader.readAsText(file, "utf-8");
@@ -919,8 +971,9 @@ export default function App() {
               </label>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Format attendu : Nom exploitation | code de la boutique | numéro
-              d'article | nom produit | date de réception de l'OT | quantité OT
+              Import basé sur l'ordre des colonnes : 0 boutique | 1 code
+              boutique | 2 article | 3 nom produit | 4 date réception | 5
+              quantité
             </p>
 
             <div className="mt-4 grid gap-3">
