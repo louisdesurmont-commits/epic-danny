@@ -137,11 +137,14 @@ export default function App() {
     defrostListInitial[0].id
   );
 
+  const remainingLines = useMemo(() => {
+    return defrostList.filter((line) => !line.validated);
+  }, [defrostList]);
+
   const currentLine = useMemo(() => {
-    return (
-      defrostList.find((line) => line.id === selectedLine) ?? defrostList[0]
-    );
-  }, [defrostList, selectedLine]);
+    const selected = remainingLines.find((line) => line.id === selectedLine);
+    return selected ?? remainingLines[0] ?? null;
+  }, [remainingLines, selectedLine]);
 
   const totalFridgeQty = useMemo(() => {
     return fridgeStock.reduce((sum, row) => sum + row.qty, 0);
@@ -280,11 +283,14 @@ export default function App() {
       ...prev,
     ]);
 
-    setDefrostList((prev) =>
-      prev.map((item) =>
+    setDefrostList((prev) => {
+      const next = prev.map((item) =>
         item.id === lineId ? { ...item, validated: true } : item
-      )
-    );
+      );
+      const nextRemaining = next.filter((item) => !item.validated);
+      setSelectedLine(nextRemaining[0]?.id ?? "");
+      return next;
+    });
   }
 
   function validateRemaining() {
@@ -367,7 +373,7 @@ export default function App() {
           </div>
 
           <div className="mt-3 space-y-2">
-            {defrostList.map((line) => {
+            {remainingLines.map((line) => {
               const need = max0(line.target + line.ot - line.stock);
 
               return (
@@ -412,105 +418,132 @@ export default function App() {
         </section>
 
         <section className="mb-4 rounded-3xl bg-white p-4 shadow-sm">
-          <h3 className="font-semibold">Traitement ligne</h3>
-          <p className="mt-2 text-sm text-slate-500">{currentLine.sku}</p>
-          <p className="text-sm text-slate-500">{currentLine.name}</p>
-
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs">Besoin calculé</p>
-              <p className="font-semibold">
-                {max0(currentLine.target + currentLine.ot - currentLine.stock)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs">Quantité transférée</p>
-              <input
-                value={currentLine.transferQty}
-                onChange={(e) =>
-                  updateTransferQty(currentLine.id, e.target.value)
-                }
-                className="w-full rounded border p-2"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 rounded border border-dashed p-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm">Lots saisis pour l'entrée frigo</p>
-              <button
-                type="button"
-                className="rounded border px-3 py-1 text-xs"
-                onClick={() => addAllocation(currentLine.id)}
-              >
-                + Ajouter un lot
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {currentLine.allocations.map((allocation) => (
-                <div
-                  key={allocation.id}
-                  className="grid grid-cols-[1fr_92px] gap-2"
-                >
-                  <input
-                    value={allocation.lot}
-                    onChange={(e) =>
-                      updateAllocation(
-                        currentLine.id,
-                        allocation.id,
-                        "lot",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Numéro de lot"
-                    className="rounded border p-2"
-                  />
-                  <input
-                    value={allocation.qty}
-                    onChange={(e) =>
-                      updateAllocation(
-                        currentLine.id,
-                        allocation.id,
-                        "qty",
-                        e.target.value
-                      )
-                    }
-                    className="rounded border p-2"
-                  />
-                </div>
-              ))}
-            </div>
-
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold">Validation de la décongélation</h3>
             <button
               type="button"
-              className="mt-3 w-full rounded bg-black p-2 text-white"
-            >
-              Prendre photo
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="rounded border p-2"
-              onClick={() => validateLine(currentLine.id)}
-            >
-              Valider ligne
-            </button>
-            <button
-              type="button"
-              className="rounded bg-black p-2 text-white"
+              className="rounded bg-black px-3 py-2 text-sm text-white"
               onClick={validateRemaining}
             >
               Valider reste
             </button>
           </div>
 
-          <p className="mt-2 text-xs text-slate-500">
-            ✔ une ligne validée crée une entrée réelle en stock frigo et ne peut
-            pas être incrémentée une seconde fois
-          </p>
+          {remainingLines.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {remainingLines.map((line) => (
+                <div key={line.id} className="rounded-2xl border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{line.sku}</p>
+                      <p className="text-sm text-slate-500">{line.name}</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
+                      Besoin {max0(line.target + line.ot - line.stock)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+                    <div className="rounded bg-slate-50 p-2">
+                      Stock: {line.stock}
+                    </div>
+                    <div className="rounded bg-slate-50 p-2">OT: {line.ot}</div>
+                    <div className="rounded bg-slate-50 p-2">
+                      Cible: {line.target}
+                    </div>
+                    <div className="rounded bg-slate-50 p-2 font-semibold">
+                      Besoin: {max0(line.target + line.ot - line.stock)}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs">Quantité transférée</p>
+                      <input
+                        value={line.transferQty}
+                        onChange={(e) =>
+                          updateTransferQty(line.id, e.target.value)
+                        }
+                        className="w-full rounded border p-2"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        onClick={() => addAllocation(line.id)}
+                      >
+                        + Ajouter un lot
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded border border-dashed p-3">
+                    <p className="text-sm">Lots saisis pour l'entrée frigo</p>
+                    <div className="mt-3 space-y-2">
+                      {line.allocations.map((allocation) => (
+                        <div
+                          key={allocation.id}
+                          className="grid grid-cols-[1fr_92px] gap-2"
+                        >
+                          <input
+                            value={allocation.lot}
+                            onChange={(e) =>
+                              updateAllocation(
+                                line.id,
+                                allocation.id,
+                                "lot",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Numéro de lot"
+                            className="rounded border p-2"
+                          />
+                          <input
+                            value={allocation.qty}
+                            onChange={(e) =>
+                              updateAllocation(
+                                line.id,
+                                allocation.id,
+                                "qty",
+                                e.target.value
+                              )
+                            }
+                            className="rounded border p-2"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="mt-3 w-full rounded bg-black p-2 text-white"
+                    >
+                      Prendre photo
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="mt-3 w-full rounded border p-2"
+                    onClick={() => validateLine(line.id)}
+                  >
+                    Valider cette ligne
+                  </button>
+                </div>
+              ))}
+
+              <p className="text-xs text-slate-500">
+                ✔ une ligne validée crée une entrée réelle en stock frigo,
+                disparaît de la liste à traiter et ne peut pas être incrémentée
+                une seconde fois
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
+              Toutes les lignes de décongélation ont été validées.
+            </div>
+          )}
         </section>
 
         <section className="mb-4 rounded-3xl bg-white p-4 shadow-sm">
