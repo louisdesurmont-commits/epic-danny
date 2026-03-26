@@ -119,6 +119,14 @@ const fridgeStockInitial: FridgeStockRow[] = [
   },
 ];
 
+const STORAGE_KEYS = {
+  screen: "oai_defrost_screen",
+  assortmentProducts: "oai_assortment_products",
+  defrostList: "oai_defrost_list",
+  fridgeStock: "oai_fridge_stock",
+  movements: "oai_movements",
+} as const;
+
 function max0(n: number): number {
   return n < 0 ? 0 : n;
 }
@@ -171,19 +179,41 @@ function NavButton(props: {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("gamme");
+  const [screen, setScreen] = useState<Screen>(() => {
+    if (typeof window === "undefined") return "gamme";
+    const saved = window.localStorage.getItem(STORAGE_KEYS.screen);
+    return (saved as Screen) || "gamme";
+  });
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "mobile";
     return getViewMode(window.innerWidth);
   });
   const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
-    assortmentProductsInitial
+    () => {
+      if (typeof window === "undefined") return assortmentProductsInitial;
+      const saved = window.localStorage.getItem(
+        STORAGE_KEYS.assortmentProducts
+      );
+      return saved
+        ? (JSON.parse(saved) as Product[])
+        : assortmentProductsInitial;
+    }
   );
-  const [defrostList, setDefrostList] =
-    useState<DefrostLine[]>(defrostListInitial);
-  const [fridgeStock, setFridgeStock] =
-    useState<FridgeStockRow[]>(fridgeStockInitial);
-  const [movements, setMovements] = useState<MovementRow[]>([]);
+  const [defrostList, setDefrostList] = useState<DefrostLine[]>(() => {
+    if (typeof window === "undefined") return defrostListInitial;
+    const saved = window.localStorage.getItem(STORAGE_KEYS.defrostList);
+    return saved ? (JSON.parse(saved) as DefrostLine[]) : defrostListInitial;
+  });
+  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(() => {
+    if (typeof window === "undefined") return fridgeStockInitial;
+    const saved = window.localStorage.getItem(STORAGE_KEYS.fridgeStock);
+    return saved ? (JSON.parse(saved) as FridgeStockRow[]) : fridgeStockInitial;
+  });
+  const [movements, setMovements] = useState<MovementRow[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = window.localStorage.getItem(STORAGE_KEYS.movements);
+    return saved ? (JSON.parse(saved) as MovementRow[]) : [];
+  });
 
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
@@ -191,6 +221,38 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.screen, screen);
+  }, [screen]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.assortmentProducts,
+      JSON.stringify(assortmentProducts)
+    );
+  }, [assortmentProducts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.defrostList,
+      JSON.stringify(defrostList)
+    );
+  }, [defrostList]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.fridgeStock,
+      JSON.stringify(fridgeStock)
+    );
+  }, [fridgeStock]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.movements,
+      JSON.stringify(movements)
+    );
+  }, [movements]);
 
   const remainingLines = useMemo(() => {
     return defrostList.filter((line) => !line.validated);
@@ -396,6 +458,24 @@ export default function App() {
             >
               Mouvements
             </NavButton>
+          </div>
+        </section>
+
+        <section className="mb-4 rounded-3xl bg-white p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+            <span>Données conservées localement sur cet appareil.</span>
+            <button
+              type="button"
+              className="rounded border px-3 py-1"
+              onClick={() => {
+                Object.values(STORAGE_KEYS).forEach((key) =>
+                  window.localStorage.removeItem(key)
+                );
+                window.location.reload();
+              }}
+            >
+              Réinitialiser
+            </button>
           </div>
         </section>
 
@@ -674,21 +754,38 @@ export default function App() {
             </div>
 
             <div className={`mt-3 grid gap-3 ${getGridCols(viewMode)}`}>
-              {fridgeStock.map((row) => (
-                <div key={row.id} className="rounded-2xl border p-3">
+              {Object.entries(
+                fridgeStock.reduce((acc, row) => {
+                  if (!acc[row.sku]) acc[row.sku] = [];
+                  acc[row.sku].push(row);
+                  return acc;
+                }, {} as Record<string, FridgeStockRow[]>)
+              ).map(([sku, rows]) => (
+                <div key={sku} className="rounded-2xl border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{row.sku}</p>
-                      <p className="text-sm text-slate-500">{row.name}</p>
+                      <p className="font-semibold">{sku}</p>
+                      <p className="text-sm text-slate-500">{rows[0].name}</p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
-                      {row.qty}
+                      {rows.reduce((sum, r) => sum + r.qty, 0)}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-slate-600">Lot : {row.lot}</p>
-                  <p className="text-xs text-slate-400">
-                    Source : {row.source}
-                  </p>
+
+                  <div className="mt-3 space-y-2">
+                    {rows.map((row) => (
+                      <div
+                        key={row.id}
+                        className="flex items-center justify-between rounded bg-slate-50 p-2 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium">Lot : {row.lot}</p>
+                          <p className="text-xs text-slate-400">{row.source}</p>
+                        </div>
+                        <span className="font-semibold">{row.qty}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
