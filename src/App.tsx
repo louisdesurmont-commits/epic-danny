@@ -1,7 +1,33 @@
 import { useMemo, useState } from "react";
 
-// --- DATA SIMPLIFIÉE ---
-const assortmentProducts = [
+type Targets = {
+  Lun: number;
+  Mar: number;
+  Mer: number;
+  Jeu: number;
+  Ven: number;
+  Sam: number;
+  Dim: number;
+};
+
+type Product = {
+  id: string;
+  sku: string;
+  name: string;
+  targets: Targets;
+};
+
+type DefrostLine = {
+  id: string;
+  sku: string;
+  name: string;
+  stock: number;
+  ot: number;
+  target: number;
+  validated: boolean;
+};
+
+const assortmentProducts: Product[] = [
   {
     id: "GP-1",
     sku: "REF-100245",
@@ -16,7 +42,7 @@ const assortmentProducts = [
   },
 ];
 
-const defrostList = [
+const defrostList: DefrostLine[] = [
   {
     id: "DL-1",
     sku: "REF-100245",
@@ -24,7 +50,6 @@ const defrostList = [
     stock: 6,
     ot: 6,
     target: 14,
-    suggested: 14 + 6 - 6,
     validated: false,
   },
   {
@@ -34,101 +59,109 @@ const defrostList = [
     stock: 2,
     ot: 6,
     target: 8,
-    suggested: 8 + 6 - 2,
     validated: false,
   },
 ];
 
-function max0(n) {
+function max0(n: number): number {
   return n < 0 ? 0 : n;
 }
 
 export default function App() {
-  const [module, setModule] = useState("planning");
-  const [selectedLine, setSelectedLine] = useState(defrostList[0].id);
+  const [selectedLine, setSelectedLine] = useState<string>(defrostList[0].id);
 
-  const currentLine = useMemo(
-    () => defrostList.find((l) => l.id === selectedLine) ?? defrostList[0],
-    [selectedLine]
-  );
+  const currentLine = useMemo(() => {
+    return (
+      defrostList.find((line) => line.id === selectedLine) ?? defrostList[0]
+    );
+  }, [selectedLine]);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto max-w-md px-4 py-4">
-
-        {/* HEADER */}
         <header className="mb-4">
           <h1 className="text-2xl font-semibold">Plan de décongélation</h1>
           <p className="text-sm text-slate-500">Étape 1 de la journée</p>
         </header>
 
-        {/* PRODUITS EN GAMME */}
         <section className="mb-4 rounded-3xl bg-white p-4 shadow-sm">
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <h2 className="font-semibold">Produits en gamme</h2>
-            <button className="text-sm">Import Excel</button>
+            <button className="text-sm" type="button">
+              Import Excel
+            </button>
           </div>
 
           <div className="mt-4 space-y-3">
-            {assortmentProducts.map((p) => (
-              <div key={p.id} className="rounded-2xl bg-slate-50 p-3">
-                <p className="font-semibold">{p.sku}</p>
-                <p className="text-sm text-slate-500">{p.name}</p>
+            {assortmentProducts.map((product) => (
+              <div key={product.id} className="rounded-2xl bg-slate-50 p-3">
+                <p className="font-semibold">{product.sku}</p>
+                <p className="text-sm text-slate-500">{product.name}</p>
 
-                {/* ÉDITION DIRECTE */}
-                <div className="mt-3 grid grid-cols-7 gap-1 text-xs">
-                  {Object.entries(p.targets).map(([day, qty]) => (
-                    <div key={day} className="flex flex-col items-center">
+                <div className="mt-3 grid grid-cols-7 gap-2 text-xs">
+                  {Object.entries(product.targets).map(([day, qty]) => (
+                    <div key={day} className="flex flex-col items-center gap-1">
                       <span className="text-[10px] text-slate-400">{day}</span>
                       <input
-                      key={day}
-                      defaultValue={qty}
-                      className="rounded bg-white p-1 text-center border"
-                      title="édition directe (autosave)"
-                    />
+                        defaultValue={qty}
+                        className="w-full rounded border bg-white p-1 text-center"
+                        title="Édition directe avec sauvegarde automatique"
+                      />
+                    </div>
                   ))}
                 </div>
-                <p className="mt-1 text-[10px] text-slate-400">édition directe → sauvegarde automatique</p>
+
+                <p className="mt-2 text-[10px] text-slate-400">
+                  Édition directe → sauvegarde automatique
+                </p>
               </div>
             ))}
           </div>
         </section>
 
-        {/* LISTE DE DÉCONGÉLATION */}
         <section className="mb-4 rounded-3xl bg-white p-4 shadow-sm">
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <h2 className="font-semibold">Besoins du jour</h2>
-            <button className="text-sm">Imprimer A4</button>
+            <button className="text-sm" type="button">
+              Imprimer A4
+            </button>
           </div>
 
           <div className="mt-3 space-y-2">
-            {defrostList.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => setSelectedLine(l.id)}
-                className="w-full rounded-2xl border p-3 text-left"
-              >
-                <p className="font-semibold">{l.sku}</p>
+            {defrostList.map((line) => {
+              const need = max0(line.target + line.ot - line.stock);
 
-                {/* DÉTAIL CALCUL */}
-                <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-                  <div>Stock: {l.stock}</div>
-                  <div>OT: {l.ot}</div>
-                  <div>Cible: {l.target}</div>
-                  <div className="font-semibold">
-                    Besoin: {max0(l.target + l.ot - l.stock)}
+              return (
+                <button
+                  key={line.id}
+                  onClick={() => setSelectedLine(line.id)}
+                  className="w-full rounded-2xl border p-3 text-left"
+                >
+                  <p className="font-semibold">{line.sku}</p>
+                  <p className="text-sm text-slate-500">{line.name}</p>
+
+                  <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+                    <div className="rounded bg-slate-50 p-2">
+                      Stock: {line.stock}
+                    </div>
+                    <div className="rounded bg-slate-50 p-2">OT: {line.ot}</div>
+                    <div className="rounded bg-slate-50 p-2">
+                      Cible: {line.target}
+                    </div>
+                    <div className="rounded bg-slate-50 p-2 font-semibold">
+                      Besoin: {need}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        {/* TRAITEMENT LIGNE */}
         <section className="rounded-3xl bg-white p-4 shadow-sm">
           <h3 className="font-semibold">Traitement ligne</h3>
-
           <p className="mt-2 text-sm text-slate-500">{currentLine.sku}</p>
+          <p className="text-sm text-slate-500">{currentLine.name}</p>
 
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div>
@@ -140,24 +173,29 @@ export default function App() {
             <div>
               <p className="text-xs">Quantité transférée</p>
               <input
-                defaultValue={max0(currentLine.target + currentLine.ot - currentLine.stock)}
-                className="w-full border rounded p-2"
+                defaultValue={max0(
+                  currentLine.target + currentLine.ot - currentLine.stock
+                )}
+                className="w-full rounded border p-2"
               />
             </div>
           </div>
 
-          {/* PHOTO LOT */}
-          <div className="mt-4 border-dashed border p-3 rounded">
+          <div className="mt-4 rounded border border-dashed p-3">
             <p className="text-sm">Photo étiquette → récupération lot</p>
-            <button className="mt-2 w-full bg-black text-white rounded p-2">
+            <button
+              type="button"
+              className="mt-2 w-full rounded bg-black p-2 text-white"
+            >
               Prendre photo
             </button>
           </div>
 
-          {/* VALIDATION */}
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <button className="border rounded p-2">Valider ligne</button>
-            <button className="bg-black text-white rounded p-2">
+            <button type="button" className="rounded border p-2">
+              Valider ligne
+            </button>
+            <button type="button" className="rounded bg-black p-2 text-white">
               Valider reste
             </button>
           </div>
