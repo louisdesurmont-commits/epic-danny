@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 
 type Targets = {
   Lun: number;
@@ -14,6 +20,7 @@ type Product = {
   id: string;
   sku: string;
   name: string;
+  unitsPerCase: number;
   targets: Targets;
 };
 
@@ -57,26 +64,52 @@ type MovementRow = {
 type Screen = "gamme" | "besoins" | "validation" | "stock" | "mouvements";
 type ViewMode = "mobile" | "tablet" | "desktop";
 
+declare global {
+  interface Window {
+    XLSX?: {
+      read: (
+        data: string | ArrayBuffer,
+        options: { type: string }
+      ) => {
+        SheetNames: string[];
+        Sheets: Record<string, unknown>;
+      };
+      utils: {
+        sheet_to_json: (sheet: unknown) => Record<string, unknown>[];
+      };
+    };
+  }
+}
+
 const assortmentProductsInitial: Product[] = [
   {
     id: "GP-1",
-    sku: "REF-100245",
-    name: "Tablette noir 70% 1kg",
+    sku: "I060629",
+    name: "Produit 1",
+    unitsPerCase: 12,
     targets: { Lun: 8, Mar: 8, Mer: 10, Jeu: 10, Ven: 14, Sam: 16, Dim: 6 },
   },
   {
     id: "GP-2",
-    sku: "REF-200118",
-    name: "Pâte de pistache 500g",
+    sku: "I060723",
+    name: "Produit 2",
+    unitsPerCase: 12,
     targets: { Lun: 4, Mar: 4, Mer: 6, Jeu: 6, Ven: 8, Sam: 8, Dim: 3 },
+  },
+  {
+    id: "GP-3",
+    sku: "I060998",
+    name: "Produit 3",
+    unitsPerCase: 12,
+    targets: { Lun: 5, Mar: 5, Mer: 6, Jeu: 6, Ven: 8, Sam: 8, Dim: 4 },
   },
 ];
 
 const defrostListInitial: DefrostLine[] = [
   {
     id: "DL-1",
-    sku: "REF-100245",
-    name: "Tablette noir 70% 1kg",
+    sku: "I060629",
+    name: "Produit 1",
     stock: 6,
     ot: 6,
     target: 14,
@@ -86,8 +119,8 @@ const defrostListInitial: DefrostLine[] = [
   },
   {
     id: "DL-2",
-    sku: "REF-200118",
-    name: "Pâte de pistache 500g",
+    sku: "I060723",
+    name: "Produit 2",
     stock: 2,
     ot: 6,
     target: 8,
@@ -103,16 +136,16 @@ const defrostListInitial: DefrostLine[] = [
 const fridgeStockInitial: FridgeStockRow[] = [
   {
     id: "FS-1",
-    sku: "REF-100245",
-    name: "Tablette noir 70% 1kg",
+    sku: "I060629",
+    name: "Produit 1",
     lot: "LOT-CHOC-240321",
     qty: 6,
     source: "Stock du matin",
   },
   {
     id: "FS-2",
-    sku: "REF-200118",
-    name: "Pâte de pistache 500g",
+    sku: "I060723",
+    name: "Produit 2",
     lot: "LOT-PIST-240322",
     qty: 2,
     source: "Stock du matin",
@@ -157,6 +190,27 @@ function getStatsCols(viewMode: ViewMode): string {
   return viewMode === "mobile" ? "grid-cols-2" : "grid-cols-4";
 }
 
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) return [];
+
+  const separator = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(separator).map((header) => header.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(separator).map((value) => value.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? "";
+    });
+    return row;
+  });
+}
+
 function NavButton(props: {
   active: boolean;
   children: ReactNode;
@@ -184,10 +238,12 @@ export default function App() {
     const saved = window.localStorage.getItem(STORAGE_KEYS.screen);
     return (saved as Screen) || "gamme";
   });
+
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "mobile";
     return getViewMode(window.innerWidth);
   });
+
   const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
     () => {
       if (typeof window === "undefined") return assortmentProductsInitial;
@@ -199,16 +255,19 @@ export default function App() {
         : assortmentProductsInitial;
     }
   );
+
   const [defrostList, setDefrostList] = useState<DefrostLine[]>(() => {
     if (typeof window === "undefined") return defrostListInitial;
     const saved = window.localStorage.getItem(STORAGE_KEYS.defrostList);
     return saved ? (JSON.parse(saved) as DefrostLine[]) : defrostListInitial;
   });
+
   const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(() => {
     if (typeof window === "undefined") return fridgeStockInitial;
     const saved = window.localStorage.getItem(STORAGE_KEYS.fridgeStock);
     return saved ? (JSON.parse(saved) as FridgeStockRow[]) : fridgeStockInitial;
   });
+
   const [movements, setMovements] = useState<MovementRow[]>(() => {
     if (typeof window === "undefined") return [];
     const saved = window.localStorage.getItem(STORAGE_KEYS.movements);
@@ -264,6 +323,16 @@ export default function App() {
 
   const availableLots = useMemo(() => {
     return fridgeStock.filter((row) => row.qty > 0).length;
+  }, [fridgeStock]);
+
+  const groupedFridgeStock = useMemo(() => {
+    return Object.entries(
+      fridgeStock.reduce<Record<string, FridgeStockRow[]>>((acc, row) => {
+        if (!acc[row.sku]) acc[row.sku] = [];
+        acc[row.sku].push(row);
+        return acc;
+      }, {})
+    );
   }, [fridgeStock]);
 
   function updateTarget(productId: string, day: keyof Targets, value: string) {
@@ -343,6 +412,91 @@ export default function App() {
           : line
       )
     );
+  }
+
+  function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = (loadEvent) => {
+      const result = loadEvent.target?.result;
+      if (!result) return;
+
+      let rows: Record<string, unknown>[] = [];
+
+      try {
+        if (file.name.toLowerCase().endsWith(".xlsx") && window.XLSX) {
+          const workbook = window.XLSX.read(result, { type: "binary" });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          rows = window.XLSX.utils.sheet_to_json(sheet);
+        } else {
+          rows = parseCSV(String(result));
+        }
+      } catch (error) {
+        console.error("Import error", error);
+        return;
+      }
+
+      const newProducts: Product[] = rows
+        .map((row) => {
+          const sku = String(
+            row["Numéro d'article"] ??
+              row["Numero d'article"] ??
+              row["sku"] ??
+              ""
+          ).trim();
+          const name = String(
+            row["Nom du produit"] ?? row["name"] ?? ""
+          ).trim();
+          const unitsPerCase = Number(
+            row["Nb unité / colis"] ?? row["unitsPerCase"] ?? 1
+          );
+
+          if (!sku || !name) return null;
+
+          return {
+            id: uid("GP"),
+            sku,
+            name,
+            unitsPerCase:
+              Number.isFinite(unitsPerCase) && unitsPerCase > 0
+                ? unitsPerCase
+                : 1,
+            targets: { Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0 },
+          } satisfies Product;
+        })
+        .filter((product): product is Product => product !== null);
+
+      setAssortmentProducts((prev) => {
+        const map = new Map(prev.map((product) => [product.sku, product]));
+
+        newProducts.forEach((product) => {
+          if (map.has(product.sku)) {
+            const existing = map.get(product.sku)!;
+            map.set(product.sku, {
+              ...existing,
+              name: product.name,
+              unitsPerCase: product.unitsPerCase,
+            });
+          } else {
+            map.set(product.sku, product);
+          }
+        });
+
+        return Array.from(map.values());
+      });
+
+      event.target.value = "";
+    };
+
+    if (file.name.toLowerCase().endsWith(".xlsx")) {
+      reader.readAsBinaryString(file);
+    } else {
+      reader.readAsText(file, "utf-8");
+    }
   }
 
   function validateLine(lineId: string) {
@@ -494,9 +648,15 @@ export default function App() {
           <section className="rounded-3xl bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Produits en gamme</h2>
-              <button className="text-sm" type="button">
+              <label className="cursor-pointer text-sm">
                 Import Excel
-              </button>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+              </label>
             </div>
 
             <div
@@ -506,8 +666,15 @@ export default function App() {
             >
               {assortmentProducts.map((product) => (
                 <div key={product.id} className="rounded-2xl bg-slate-50 p-3">
-                  <p className="font-semibold">{product.sku}</p>
-                  <p className="text-sm text-slate-500">{product.name}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{product.sku}</p>
+                      <p className="text-sm text-slate-500">{product.name}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium ring-1 ring-slate-200">
+                      {product.unitsPerCase} u / colis
+                    </span>
+                  </div>
 
                   <div
                     className={`mt-3 grid gap-2 text-xs ${
@@ -539,6 +706,10 @@ export default function App() {
                   </div>
 
                   <p className="mt-2 text-[10px] text-slate-400">
+                    Import Excel attendu : Numéro d'article | Nom du produit |
+                    Nb unité / colis
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
                     Édition directe → sauvegarde automatique
                   </p>
                 </div>
@@ -570,6 +741,12 @@ export default function App() {
               ) : (
                 remainingLines.map((line) => {
                   const need = max0(line.target + line.ot - line.stock);
+                  const product = assortmentProducts.find(
+                    (item) => item.sku === line.sku
+                  );
+                  const unitsPerCase = product?.unitsPerCase ?? 1;
+                  const casesNeeded = need / unitsPerCase;
+
                   return (
                     <div
                       key={line.id}
@@ -594,6 +771,9 @@ export default function App() {
                         <div className="rounded bg-slate-50 p-2 font-semibold">
                           Besoin: {need}
                         </div>
+                      </div>
+                      <div className="mt-2 rounded bg-slate-50 p-2 text-xs">
+                        Colis théoriques : {casesNeeded.toFixed(2)}
                       </div>
                     </div>
                   );
@@ -754,13 +934,7 @@ export default function App() {
             </div>
 
             <div className={`mt-3 grid gap-3 ${getGridCols(viewMode)}`}>
-              {Object.entries(
-                fridgeStock.reduce((acc, row) => {
-                  if (!acc[row.sku]) acc[row.sku] = [];
-                  acc[row.sku].push(row);
-                  return acc;
-                }, {} as Record<string, FridgeStockRow[]>)
-              ).map(([sku, rows]) => (
+              {groupedFridgeStock.map(([sku, rows]) => (
                 <div key={sku} className="rounded-2xl border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -768,7 +942,7 @@ export default function App() {
                       <p className="text-sm text-slate-500">{rows[0].name}</p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
-                      {rows.reduce((sum, r) => sum + r.qty, 0)}
+                      {rows.reduce((sum, row) => sum + row.qty, 0)}
                     </span>
                   </div>
 
