@@ -1,85 +1,54 @@
+import NavButton from "./components/NavButton";
+
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+
+import type {
+  Targets,
+  Product,
+  DefrostLine,
+  FridgeStockRow,
+  MovementRow,
+  TransferOrderLine,
+  Screen,
+  ViewMode,
+} from "./types";
+
 import {
-  useEffect,
-  useMemo,
-  useState,
-  type ChangeEvent,
-  type ReactNode,
-} from "react";
+  assortmentProductsInitial,
+  defrostListInitial,
+  fridgeStockInitial,
+  STORAGE_KEYS,
+  OT_COLS,
+  ASSORTMENT_COLS,
+} from "./constants";
 
-type Targets = {
-  Lun: number;
-  Mar: number;
-  Mer: number;
-  Jeu: number;
-  Ven: number;
-  Sam: number;
-  Dim: number;
-};
+import {
+  formatDateTime,
+  getTodayTargetKey,
+  getViewMode,
+  getGridCols,
+  getShellWidth,
+  getStatsCols,
+} from "./utils/format";
 
-type Product = {
-  id: string;
-  sku: string;
-  name: string;
-  unitsPerCase: number;
-  targets: Targets;
-};
+import {
+  computeTransferNeed,
+  getTodayTarget,
+  uid,
+  parseCSV,
+  getCellByIndex,
+  toPositiveNumber,
+} from "./utils/stock";
 
-type DefrostAllocation = {
-  id: string;
-  lot: string;
-  qty: number;
-};
+import MouvementsScreen from "./screens/MouvementsScreen";
 
-type DefrostLine = {
-  id: string;
-  sku: string;
-  name: string;
-  stock: number;
-  ot: number;
-  target: number;
-  transferQty: number;
-  validated: boolean;
-  allocations: DefrostAllocation[];
-};
+import OTScreen from "./screens/OTScreen";
 
-type FridgeStockRow = {
-  id: string;
-  sku: string;
-  name: string;
-  lot: string;
-  qty: number;
-  source: string;
-};
+import BesoinsScreen from "./screens/BesoinsScreen";
 
-type MovementRow = {
-  id: string;
-  type: "ENTREE_FRIGO" | "SORTIE_OT" | "AJUSTEMENT" | "INVENTAIRE";
-  sku: string;
-  name: string;
-  lot: string;
-  qty: number;
-  reason: string;
-  createdAt?: string;
-};
+import GammeScreen from "./screens/GammeScreen";
 
-type TransferOrderLine = {
-  id: string;
-  boutiqueName: string;
-  boutiqueCode: string;
-  sku: string;
-  name: string;
-  receptionDate: string;
-  qty: number;
-};
-
-type Screen =
-  | "gamme"
-  | "ot"
-  | "besoins"
-  | "validation"
-  | "stock"
-  | "mouvements";
-type ViewMode = "mobile" | "tablet" | "desktop";
+import ValidationScreen from "./screens/ValidationScreen";
 
 declare global {
   interface Window {
@@ -99,241 +68,6 @@ declare global {
       };
     };
   }
-}
-
-const assortmentProductsInitial: Product[] = [
-  {
-    id: "GP-1",
-    sku: "I060629",
-    name: "Produit 1",
-    unitsPerCase: 12,
-    targets: { Lun: 8, Mar: 8, Mer: 10, Jeu: 10, Ven: 14, Sam: 16, Dim: 6 },
-  },
-  {
-    id: "GP-2",
-    sku: "I060723",
-    name: "Produit 2",
-    unitsPerCase: 12,
-    targets: { Lun: 4, Mar: 4, Mer: 6, Jeu: 6, Ven: 8, Sam: 8, Dim: 3 },
-  },
-  {
-    id: "GP-3",
-    sku: "I060998",
-    name: "Produit 3",
-    unitsPerCase: 12,
-    targets: { Lun: 5, Mar: 5, Mer: 6, Jeu: 6, Ven: 8, Sam: 8, Dim: 4 },
-  },
-];
-
-const defrostListInitial: DefrostLine[] = [
-  {
-    id: "DL-1",
-    sku: "I060629",
-    name: "Produit 1",
-    stock: 6,
-    ot: 6,
-    target: 14,
-    transferQty: 14,
-    validated: false,
-    allocations: [{ id: "A-1", lot: "LOT-CHOC-240327", qty: 14 }],
-  },
-  {
-    id: "DL-2",
-    sku: "I060723",
-    name: "Produit 2",
-    stock: 2,
-    ot: 6,
-    target: 8,
-    transferQty: 12,
-    validated: false,
-    allocations: [
-      { id: "A-2", lot: "LOT-PIST-240327-A", qty: 7 },
-      { id: "A-3", lot: "LOT-PIST-240327-B", qty: 5 },
-    ],
-  },
-];
-
-const fridgeStockInitial: FridgeStockRow[] = [
-  {
-    id: "FS-1",
-    sku: "I060629",
-    name: "Produit 1",
-    lot: "LOT-CHOC-240321",
-    qty: 6,
-    source: "Stock du matin",
-  },
-  {
-    id: "FS-2",
-    sku: "I060723",
-    name: "Produit 2",
-    lot: "LOT-PIST-240322",
-    qty: 2,
-    source: "Stock du matin",
-  },
-];
-
-const STORAGE_KEYS = {
-  screen: "oai_defrost_screen",
-  assortmentProducts: "oai_assortment_products",
-  transferOrders: "oai_transfer_orders",
-  defrostList: "oai_defrost_list",
-  fridgeStock: "oai_fridge_stock",
-  movements: "oai_movements",
-} as const;
-
-const OT_COLS = {
-  boutiqueName: 0,
-  boutiqueCode: 1,
-  sku: 2,
-  name: 3,
-  receptionDate: 4,
-  qty: 5,
-} as const;
-
-const ASSORTMENT_COLS = {
-  sku: 0,
-  name: 1,
-  unitsPerCase: 2,
-  lun: 3,
-  mar: 4,
-  mer: 5,
-  jeu: 6,
-  ven: 7,
-  sam: 8,
-  dim: 9,
-} as const;
-
-function max0(n: number): number {
-  return n < 0 ? 0 : n;
-}
-
-function computeTransferNeed(
-  stock: number,
-  target: number,
-  ot: number
-): number {
-  if (ot <= 0) return 0;
-  return max0(target + ot - stock);
-}
-
-function getTodayTargetKey(date = new Date()): keyof Targets {
-  const formatter = new Intl.DateTimeFormat("fr-FR", {
-    weekday: "short",
-    timeZone: "Europe/Paris",
-  });
-
-  const dayLabel = formatter.format(date).toLowerCase().replace(".", "");
-
-  const map: Record<string, keyof Targets> = {
-    lun: "Lun",
-    mar: "Mar",
-    mer: "Mer",
-    jeu: "Jeu",
-    ven: "Ven",
-    sam: "Sam",
-    dim: "Dim",
-  };
-
-  return map[dayLabel] ?? "Ven";
-}
-
-function getTodayTarget(targets: Targets, date = new Date()): number {
-  const key = getTodayTargetKey(date);
-  return targets[key];
-}
-
-function uid(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function formatDateTime(value?: string): string {
-  if (!value) return "non horodaté";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "non horodaté";
-  }
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-    timeZone: "Europe/Paris",
-  }).format(date);
-}
-
-function getViewMode(width: number): ViewMode {
-  if (width < 768) return "mobile";
-  if (width < 1200) return "tablet";
-  return "desktop";
-}
-
-function getGridCols(viewMode: ViewMode): string {
-  if (viewMode === "desktop") return "grid-cols-3";
-  if (viewMode === "tablet") return "grid-cols-2";
-  return "grid-cols-1";
-}
-
-function getShellWidth(viewMode: ViewMode): string {
-  if (viewMode === "desktop") return "max-w-7xl";
-  if (viewMode === "tablet") return "max-w-4xl";
-  return "max-w-md";
-}
-
-function getStatsCols(viewMode: ViewMode): string {
-  return viewMode === "mobile" ? "grid-cols-2" : "grid-cols-4";
-}
-
-function parseCSV(text: string): Record<string, string>[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  if (lines.length === 0) return [];
-
-  const separator = lines[0].includes(";") ? ";" : ",";
-
-  return lines.map((line) => {
-    const values = line.split(separator).map((value) => value.trim());
-    return Object.fromEntries(
-      values.map((value, index) => [String(index), value])
-    );
-  });
-}
-
-function getCellByIndex(row: Record<string, unknown>, index: number): string {
-  return String(row[String(index)] ?? "").trim();
-}
-
-function toPositiveNumber(value: unknown, fallback = 0): number {
-  const n = Number(
-    String(value ?? "")
-      .replace(",", ".")
-      .trim()
-  );
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-}
-
-function NavButton(props: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  const { active, children, onClick } = props;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`whitespace-nowrap rounded-2xl px-3 py-2 text-sm font-medium ${
-        active
-          ? "bg-slate-900 text-white"
-          : "bg-white text-slate-700 ring-1 ring-slate-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
 }
 
 export default function App() {
@@ -392,6 +126,13 @@ export default function App() {
     null
   );
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
+
+  const [movementFilters, setMovementFilters] = useState({
+    type: "",
+    sku: "",
+    name: "",
+    lot: "",
+  });
 
   const [manualAdjustment, setManualAdjustment] = useState({
     sku: "",
@@ -589,6 +330,47 @@ export default function App() {
     return movements.filter((movement) => movement.type === "ENTREE_FRIGO")
       .length;
   }, [movements]);
+
+  const movementTypeOptions = useMemo(() => {
+    return Array.from(
+      new Set(movements.map((movement) => movement.type))
+    ).sort();
+  }, [movements]);
+
+  const filteredMovements = useMemo(() => {
+    const normalize = (value: string) => value.trim().toLowerCase();
+
+    const typeFilter = normalize(movementFilters.type);
+    const skuFilter = normalize(movementFilters.sku);
+    const nameFilter = normalize(movementFilters.name);
+    const lotFilter = normalize(movementFilters.lot);
+
+    return [...movements]
+      .filter((movement) => {
+        if (typeFilter && movement.type.toLowerCase() !== typeFilter) {
+          return false;
+        }
+
+        if (skuFilter && !movement.sku.toLowerCase().includes(skuFilter)) {
+          return false;
+        }
+
+        if (nameFilter && !movement.name.toLowerCase().includes(nameFilter)) {
+          return false;
+        }
+
+        if (lotFilter && !movement.lot.toLowerCase().includes(lotFilter)) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [movements, movementFilters]);
 
   function updateTarget(productId: string, day: keyof Targets, value: string) {
     const nextValue = Number(value);
@@ -1402,473 +1184,51 @@ export default function App() {
         </section>
 
         {screen === "gamme" && (
-          <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Produits en gamme</h2>
-              <label className="cursor-pointer text-sm">
-                Import Excel
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  className="hidden"
-                  onChange={handleImportFile}
-                />
-              </label>
-            </div>
-
-            <div
-              className={`mt-4 grid gap-3 ${
-                viewMode === "desktop" ? "grid-cols-2" : "grid-cols-1"
-              }`}
-            >
-              {assortmentProducts.map((product) => (
-                <div key={product.id} className="rounded-2xl bg-slate-50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold leading-tight">
-                        {product.name}
-                      </p>
-                      <p className="text-xs text-slate-500">{product.sku}</p>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-2">
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium ring-1 ring-slate-200">
-                        {product.unitsPerCase} u / colis
-                      </span>
-
-                      <button
-                        type="button"
-                        className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700"
-                        onClick={() => removeProduct(product.id)}
-                      >
-                        Sortir de la gamme
-                      </button>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`mt-3 grid gap-2 text-xs ${
-                      viewMode === "mobile" ? "grid-cols-4" : "grid-cols-7"
-                    }`}
-                  >
-                    {Object.entries(product.targets).map(([day, qty]) => (
-                      <div
-                        key={day}
-                        className="flex flex-col items-center gap-1"
-                      >
-                        <span className="text-[10px] text-slate-400">
-                          {day}
-                        </span>
-                        <input
-                          value={qty}
-                          onChange={(e) =>
-                            updateTarget(
-                              product.id,
-                              day as keyof Targets,
-                              e.target.value
-                            )
-                          }
-                          className="w-full rounded border bg-white p-1 text-center"
-                          title="Édition directe avec sauvegarde automatique"
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  <p className="mt-2 text-[10px] text-slate-400">
-                    Import attendu par colonnes : 0 article | 1 description | 2
-                    u/colis | 3 Lun | 4 Mar | 5 Mer | 6 Jeu | 7 Ven | 8 Sam | 9
-                    Dim
-                  </p>
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    Édition directe → sauvegarde automatique
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
+          <GammeScreen
+            assortmentProducts={assortmentProducts}
+            viewMode={viewMode}
+            updateTarget={updateTarget}
+            removeProduct={removeProduct}
+            handleImportFile={handleImportFile}
+          />
         )}
 
         {screen === "ot" && (
-          <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Import des OT</h2>
-              <label className="cursor-pointer text-sm">
-                Import XLSX / CSV
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  className="hidden"
-                  onChange={handleImportOTFile}
-                />
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Import basé sur l'ordre des colonnes : 0 boutique | 1 code
-              boutique | 2 article | 3 nom produit | 4 date réception | 5
-              quantité
-            </p>
-
-            <div className="mt-4 grid gap-3">
-              <div className="rounded-2xl bg-slate-50 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span>Boutiques importées</span>
-                  <strong>{otSummary.length}</strong>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span>Lignes OT</span>
-                  <strong>{transferOrders.length}</strong>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span>Quantité totale OT</span>
-                  <strong>
-                    {transferOrders.reduce((sum, row) => sum + row.qty, 0)}
-                  </strong>
-                </div>
-              </div>
-
-              {otSummary.length > 0 && (
-                <div className={`grid gap-3 ${getGridCols(viewMode)}`}>
-                  {otSummary.map((item) => {
-                    const boutiqueKey = `${item.boutiqueCode}__${item.boutiqueName}`;
-                    const isSelected = selectedBoutiqueKey === boutiqueKey;
-
-                    return (
-                      <button
-                        key={boutiqueKey}
-                        type="button"
-                        onClick={() => setSelectedBoutiqueKey(boutiqueKey)}
-                        className={`rounded-2xl border p-3 text-left transition ${
-                          isSelected
-                            ? "border-slate-900 bg-slate-900 text-white"
-                            : "bg-white hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="font-semibold">{item.boutiqueName}</p>
-                        <p
-                          className={`text-sm ${
-                            isSelected ? "text-slate-200" : "text-slate-500"
-                          }`}
-                        >
-                          Code boutique : {item.boutiqueCode}
-                        </p>
-                        <div className="mt-2 flex items-center justify-between text-sm">
-                          <span>Lignes</span>
-                          <strong>{item.lines}</strong>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-sm">
-                          <span>Quantité OT</span>
-                          <strong>{item.qty}</strong>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {transferOrders.length > 0 && (
-                <div className="rounded-2xl border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold">
-                      Lignes d'OT de la boutique sélectionnée
-                    </p>
-                    {selectedBoutiqueKey && (
-                      <button
-                        type="button"
-                        className="text-sm text-slate-500 underline"
-                        onClick={() => setSelectedBoutiqueKey(null)}
-                      >
-                        Effacer la sélection
-                      </button>
-                    )}
-                  </div>
-
-                  {!selectedBoutiqueKey ? (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Sélectionne une boutique ci-dessus pour afficher toutes
-                      ses lignes d'OT.
-                    </p>
-                  ) : selectedBoutiqueLines.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Aucune ligne OT pour cette boutique.
-                    </p>
-                  ) : (
-                    <div className="mt-3 space-y-2 text-sm">
-                      {selectedBoutiqueLines.map((row) => (
-                        <div key={row.id} className="rounded bg-slate-50 p-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <span>
-                              {row.sku} · {row.name}
-                            </span>
-                            <strong>{row.qty}</strong>
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            Réception {row.receptionDate}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
+          <OTScreen
+            viewMode={viewMode}
+            transferOrders={transferOrders}
+            otSummary={otSummary}
+            selectedBoutiqueKey={selectedBoutiqueKey}
+            setSelectedBoutiqueKey={setSelectedBoutiqueKey}
+            selectedBoutiqueLines={selectedBoutiqueLines}
+            handleImportOTFile={handleImportOTFile}
+          />
         )}
 
         {screen === "besoins" && (
-          <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-semibold">Besoins du jour</h2>
-                <p className="text-xs text-slate-500">
-                  Cible utilisée aujourd'hui : {todayTargetKey}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  className="rounded border px-3 py-2 text-sm"
-                  type="button"
-                  onClick={recomputeDefrostNeeds}
-                >
-                  Recalculer les besoins
-                </button>
-
-                <button className="text-sm" type="button">
-                  Imprimer A4
-                </button>
-              </div>
-            </div>
-
-            {recomputeMessage && (
-              <div className="mt-3 rounded-2xl bg-sky-50 p-3 text-sm text-sky-800 ring-1 ring-sky-100">
-                {recomputeMessage}
-              </div>
-            )}
-
-            <div
-              className={`mt-3 ${
-                remainingLines.length === 0
-                  ? ""
-                  : `grid gap-3 ${getGridCols(viewMode)}`
-              }`}
-            >
-              {remainingLines.length === 0 ? (
-                <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                  Aucun besoin de transfert recommandé.
-                </div>
-              ) : (
-                remainingLines.map((line) => {
-                  const product = assortmentProducts.find(
-                    (item) => item.sku === line.sku
-                  );
-                  const importedOt = otBySku[line.sku] ?? line.ot;
-                  const need = computeTransferNeed(
-                    line.stock,
-                    line.target,
-                    importedOt
-                  );
-                  const unitsPerCase = product?.unitsPerCase ?? 1;
-                  const casesNeeded = need / unitsPerCase;
-
-                  return (
-                    <div
-                      key={line.id}
-                      className="rounded-2xl border bg-white p-3 text-left"
-                    >
-                      <p className="font-semibold leading-tight">{line.name}</p>
-                      <p className="text-xs text-slate-500">{line.sku}</p>
-                      <div
-                        className={`mt-2 grid gap-2 text-xs ${
-                          viewMode === "mobile" ? "grid-cols-2" : "grid-cols-4"
-                        }`}
-                      >
-                        <div className="rounded bg-slate-50 p-2">
-                          Stock: {line.stock}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          OT: {importedOt}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          Cible: {line.target}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2 font-semibold">
-                          Besoin: {need}
-                        </div>
-                      </div>
-                      <div className="mt-2 rounded bg-slate-50 p-2 text-xs">
-                        Colis théoriques : {casesNeeded.toFixed(2)}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
+          <BesoinsScreen
+            todayTargetKey={todayTargetKey}
+            recomputeMessage={recomputeMessage}
+            recomputeDefrostNeeds={recomputeDefrostNeeds}
+            remainingLines={remainingLines}
+            assortmentProducts={assortmentProducts}
+            otBySku={otBySku}
+            viewMode={viewMode}
+          />
         )}
 
         {screen === "validation" && (
-          <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">Validation décongélation</h2>
-              <button
-                type="button"
-                className="rounded bg-black px-3 py-2 text-sm text-white"
-                onClick={validateRemaining}
-              >
-                Valider reste
-              </button>
-            </div>
-
-            {remainingLines.length > 0 ? (
-              <div className={`mt-4 grid gap-4 ${getGridCols(viewMode)}`}>
-                {remainingLines.map((line) => {
-                  const importedOt = otBySku[line.sku] ?? line.ot;
-                  const need = computeTransferNeed(
-                    line.stock,
-                    line.target,
-                    importedOt
-                  );
-
-                  return (
-                    <div key={line.id} className="rounded-2xl border p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold leading-tight">
-                            {line.name}
-                          </p>
-                          <p className="text-xs text-slate-500">{line.sku}</p>
-                        </div>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
-                          Besoin {need}
-                        </span>
-                      </div>
-
-                      <div
-                        className={`mt-3 grid gap-2 text-xs ${
-                          viewMode === "mobile" ? "grid-cols-2" : "grid-cols-4"
-                        }`}
-                      >
-                        <div className="rounded bg-slate-50 p-2">
-                          Stock: {line.stock}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          OT: {importedOt}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2">
-                          Cible: {line.target}
-                        </div>
-                        <div className="rounded bg-slate-50 p-2 font-semibold">
-                          Besoin: {need}
-                        </div>
-                      </div>
-
-                      <div
-                        className={`mt-3 grid gap-3 ${
-                          viewMode === "mobile" ? "grid-cols-1" : "grid-cols-2"
-                        }`}
-                      >
-                        <div>
-                          <p className="text-xs">Quantité transférée</p>
-                          <input
-                            value={line.transferQty}
-                            onChange={(e) =>
-                              updateTransferQty(line.id, e.target.value)
-                            }
-                            className="w-full rounded border p-2"
-                          />
-                        </div>
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            className="w-full rounded border px-3 py-2 text-sm"
-                            onClick={() => addAllocation(line.id)}
-                          >
-                            + Ajouter un lot
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 rounded border border-dashed p-3">
-                        <p className="text-sm">
-                          Lots saisis pour l'entrée frigo
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {line.allocations.map((allocation) => (
-                            <div
-                              key={allocation.id}
-                              className="grid grid-cols-[1fr_92px] gap-2"
-                            >
-                              <input
-                                value={allocation.lot}
-                                onChange={(e) =>
-                                  updateAllocation(
-                                    line.id,
-                                    allocation.id,
-                                    "lot",
-                                    e.target.value
-                                  )
-                                }
-                                placeholder="Numéro de lot"
-                                className="rounded border p-2"
-                              />
-                              <input
-                                value={allocation.qty}
-                                onChange={(e) =>
-                                  updateAllocation(
-                                    line.id,
-                                    allocation.id,
-                                    "qty",
-                                    e.target.value
-                                  )
-                                }
-                                className="rounded border p-2"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="mt-3 w-full rounded bg-black p-2 text-white"
-                        >
-                          Prendre photo
-                        </button>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          className="w-full rounded border p-2"
-                          onClick={() => validateLine(line.id)}
-                        >
-                          Valider cette ligne
-                        </button>
-
-                        <button
-                          type="button"
-                          className="w-full rounded border border-amber-300 bg-amber-50 p-2 text-amber-800"
-                          onClick={() => ignoreLine(line.id)}
-                        >
-                          Ignorer le besoin
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <p className="text-xs text-slate-500">
-                  ✔ une ligne validée crée une entrée réelle en stock frigo,
-                  disparaît de la liste à traiter et ne peut pas être
-                  incrémentée une seconde fois
-                </p>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                Aucune ligne de décongélation à traiter.
-              </div>
-            )}
-          </section>
+          <ValidationScreen
+            remainingLines={remainingLines}
+            otBySku={otBySku}
+            viewMode={viewMode}
+            updateTransferQty={updateTransferQty}
+            addAllocation={addAllocation}
+            updateAllocation={updateAllocation}
+            validateLine={validateLine}
+            ignoreLine={ignoreLine}
+            validateRemaining={validateRemaining}
+          />
         )}
 
         {screen === "stock" && (
@@ -2106,86 +1466,12 @@ export default function App() {
         )}
 
         {screen === "mouvements" && (
-          <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Journal des mouvements</h2>
-              <span className="text-xs text-slate-500">traçabilité</span>
-            </div>
-
-            <div className={`mt-3 grid gap-3 ${getStatsCols(viewMode)}`}>
-              <div className="rounded-2xl bg-slate-50 p-3 text-sm">
-                <p className="text-xs text-slate-500">Entrées frigo</p>
-                <p className="mt-1 text-2xl font-semibold">
-                  {stockEntryMovementsCount}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-amber-50 p-3 text-sm ring-1 ring-amber-100">
-                <p className="text-xs text-amber-700">Besoins ignorés</p>
-                <p className="mt-1 text-2xl font-semibold text-amber-800">
-                  {ignoredMovementsCount}
-                </p>
-              </div>
-            </div>
-
-            <div
-              className={`mt-3 ${
-                movements.length === 0
-                  ? ""
-                  : `grid gap-3 ${getGridCols(viewMode)}`
-              }`}
-            >
-              {movements.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  Aucun mouvement pour le moment.
-                </p>
-              ) : (
-                movements.map((movement) => {
-                  const isIgnored = movement.reason.startsWith("Besoin ignoré");
-
-                  const badgeClass = isIgnored
-                    ? "bg-amber-100 text-amber-700"
-                    : movement.qty < 0
-                    ? "bg-rose-100 text-rose-700"
-                    : movement.type === "INVENTAIRE"
-                    ? "bg-sky-100 text-sky-700"
-                    : "bg-emerald-100 text-emerald-700";
-
-                  const badgeLabel = isIgnored
-                    ? "Ignoré"
-                    : `${movement.qty > 0 ? "+" : ""}${movement.qty}`;
-
-                  return (
-                    <div key={movement.id} className="rounded-2xl border p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">{movement.type}</p>
-                          <p className="text-sm text-slate-500">
-                            {movement.sku} · {movement.name}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${badgeClass}`}
-                        >
-                          {badgeLabel}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-sm text-slate-600">
-                        Lot : {movement.lot}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Horodatage : {formatDateTime(movement.createdAt)}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {movement.reason}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
+          <MouvementsScreen
+            filteredMovements={filteredMovements}
+            movementFilters={movementFilters}
+            setMovementFilters={setMovementFilters}
+            movementTypeOptions={movementTypeOptions}
+          />
         )}
       </div>
     </div>
