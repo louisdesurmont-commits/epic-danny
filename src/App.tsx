@@ -497,6 +497,12 @@ export default function App() {
     );
   }
 
+  function removeProduct(productId: string) {
+    setAssortmentProducts((prev) =>
+      prev.filter((product) => product.id !== productId)
+    );
+  }
+
   function updateTransferQty(lineId: string, value: string) {
     const nextValue = Number(value);
     setDefrostList((prev) =>
@@ -1083,9 +1089,20 @@ export default function App() {
                       <p className="font-semibold">{product.sku}</p>
                       <p className="text-sm text-slate-500">{product.name}</p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium ring-1 ring-slate-200">
-                      {product.unitsPerCase} u / colis
-                    </span>
+
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium ring-1 ring-slate-200">
+                        {product.unitsPerCase} u / colis
+                      </span>
+
+                      <button
+                        type="button"
+                        className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700"
+                        onClick={() => removeProduct(product.id)}
+                      >
+                        Sortir de la gamme
+                      </button>
+                    </div>
                   </div>
 
                   <div
