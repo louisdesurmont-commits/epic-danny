@@ -193,6 +193,15 @@ function max0(n: number): number {
   return n < 0 ? 0 : n;
 }
 
+function computeTransferNeed(
+  stock: number,
+  target: number,
+  ot: number
+): number {
+  if (ot <= 0) return 0;
+  return max0(target + ot - stock);
+}
+
 function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -359,7 +368,9 @@ export default function App() {
   }, [movements]);
 
   const remainingLines = useMemo(() => {
-    return defrostList.filter((line) => !line.validated);
+    return defrostList.filter(
+      (line) => !line.validated && line.transferQty > 0
+    );
   }, [defrostList]);
 
   const otSummary = useMemo(() => {
@@ -414,6 +425,17 @@ export default function App() {
       }, {})
     );
   }, [fridgeStock]);
+
+  const ignoredMovementsCount = useMemo(() => {
+    return movements.filter((movement) =>
+      movement.reason.startsWith("Besoin ignoré")
+    ).length;
+  }, [movements]);
+
+  const stockEntryMovementsCount = useMemo(() => {
+    return movements.filter((movement) => movement.type === "ENTREE_FRIGO")
+      .length;
+  }, [movements]);
 
   function updateTarget(productId: string, day: keyof Targets, value: string) {
     const nextValue = Number(value);
@@ -598,7 +620,7 @@ export default function App() {
 
         const ot = incomingBySku[product.sku] ?? 0;
         const target = product.targets.Ven;
-        const need = max0(target + ot - stock);
+        const need = computeTransferNeed(stock, target, ot);
 
         return {
           id: `DL-${product.sku}`,
@@ -791,9 +813,43 @@ export default function App() {
     );
   }
 
+  function ignoreLine(lineId: string) {
+    const line = defrostList.find((item) => item.id === lineId);
+    if (!line || line.validated) return;
+
+    setMovements((prev) => [
+      {
+        id: uid("MVT"),
+        type: "AJUSTEMENT",
+        sku: line.sku,
+        name: line.name,
+        lot: "-",
+        qty: 0,
+        reason: `Besoin ignoré ${line.id}`,
+      },
+      ...prev,
+    ]);
+
+    setDefrostList((prev) =>
+      prev.map((item) =>
+        item.id === lineId
+          ? {
+              ...item,
+              validated: true,
+              transferQty: 0,
+              allocations: item.allocations.map((allocation) => ({
+                ...allocation,
+                qty: 0,
+              })),
+            }
+          : item
+      )
+    );
+  }
+
   function validateRemaining() {
-    defrostList.forEach((line) => {
-      if (!line.validated) validateLine(line.id);
+    remainingLines.forEach((line) => {
+      validateLine(line.id);
     });
   }
 
@@ -1060,7 +1116,7 @@ export default function App() {
             >
               {remainingLines.length === 0 ? (
                 <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                  Tous les besoins ont déjà été validés.
+                  Aucun besoin de transfert recommandé.
                 </div>
               ) : (
                 remainingLines.map((line) => {
@@ -1068,7 +1124,11 @@ export default function App() {
                     (item) => item.sku === line.sku
                   );
                   const importedOt = otBySku[line.sku] ?? line.ot;
-                  const need = max0(line.target + importedOt - line.stock);
+                  const need = computeTransferNeed(
+                    line.stock,
+                    line.target,
+                    importedOt
+                  );
                   const unitsPerCase = product?.unitsPerCase ?? 1;
                   const casesNeeded = need / unitsPerCase;
 
@@ -1125,7 +1185,11 @@ export default function App() {
               <div className={`mt-4 grid gap-4 ${getGridCols(viewMode)}`}>
                 {remainingLines.map((line) => {
                   const importedOt = otBySku[line.sku] ?? line.ot;
-                  const need = max0(line.target + importedOt - line.stock);
+                  const need = computeTransferNeed(
+                    line.stock,
+                    line.target,
+                    importedOt
+                  );
 
                   return (
                     <div key={line.id} className="rounded-2xl border p-3">
@@ -1231,13 +1295,23 @@ export default function App() {
                         </button>
                       </div>
 
-                      <button
-                        type="button"
-                        className="mt-3 w-full rounded border p-2"
-                        onClick={() => validateLine(line.id)}
-                      >
-                        Valider cette ligne
-                      </button>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          className="w-full rounded border p-2"
+                          onClick={() => validateLine(line.id)}
+                        >
+                          Valider cette ligne
+                        </button>
+
+                        <button
+                          type="button"
+                          className="w-full rounded border border-amber-300 bg-amber-50 p-2 text-amber-800"
+                          onClick={() => ignoreLine(line.id)}
+                        >
+                          Ignorer le besoin
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -1250,7 +1324,7 @@ export default function App() {
               </div>
             ) : (
               <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                Toutes les lignes de décongélation ont été validées.
+                Aucune ligne de décongélation à traiter.
               </div>
             )}
           </section>
@@ -1305,6 +1379,21 @@ export default function App() {
               <span className="text-xs text-slate-500">traçabilité</span>
             </div>
 
+            <div className={`mt-3 grid gap-3 ${getStatsCols(viewMode)}`}>
+              <div className="rounded-2xl bg-slate-50 p-3 text-sm">
+                <p className="text-xs text-slate-500">Entrées frigo</p>
+                <p className="mt-1 text-2xl font-semibold">
+                  {stockEntryMovementsCount}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-amber-50 p-3 text-sm ring-1 ring-amber-100">
+                <p className="text-xs text-amber-700">Besoins ignorés</p>
+                <p className="mt-1 text-2xl font-semibold text-amber-800">
+                  {ignoredMovementsCount}
+                </p>
+              </div>
+            </div>
+
             <div
               className={`mt-3 ${
                 movements.length === 0
@@ -1317,25 +1406,39 @@ export default function App() {
                   Aucun mouvement pour le moment.
                 </p>
               ) : (
-                movements.map((movement) => (
-                  <div key={movement.id} className="rounded-2xl border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold">{movement.type}</p>
-                        <p className="text-sm text-slate-500">
-                          {movement.sku} · {movement.name}
-                        </p>
+                movements.map((movement) => {
+                  const isIgnored = movement.reason.startsWith("Besoin ignoré");
+
+                  return (
+                    <div key={movement.id} className="rounded-2xl border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">{movement.type}</p>
+                          <p className="text-sm text-slate-500">
+                            {movement.sku} · {movement.name}
+                          </p>
+                        </div>
+
+                        {isIgnored ? (
+                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                            Ignoré
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">
+                            +{movement.qty}
+                          </span>
+                        )}
                       </div>
-                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">
-                        +{movement.qty}
-                      </span>
+
+                      <p className="mt-2 text-sm text-slate-600">
+                        Lot : {movement.lot}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {movement.reason}
+                      </p>
                     </div>
-                    <p className="mt-2 text-sm text-slate-600">
-                      Lot : {movement.lot}
-                    </p>
-                    <p className="text-xs text-slate-400">{movement.reason}</p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
