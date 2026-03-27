@@ -393,6 +393,20 @@ export default function App() {
   );
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
+  const [manualAdjustment, setManualAdjustment] = useState({
+    sku: "",
+    lot: "",
+    qty: 0,
+    reason: "",
+  });
+
+  const [inventoryEntry, setInventoryEntry] = useState({
+    sku: "",
+    lot: "",
+    countedQty: 0,
+    reason: "",
+  });
+
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
     handleResize();
@@ -514,6 +528,56 @@ export default function App() {
       }, {})
     );
   }, [fridgeStock]);
+
+  const stockProducts = useMemo(() => {
+    const map = new Map<string, { sku: string; name: string }>();
+
+    fridgeStock.forEach((row) => {
+      if (row.qty <= 0) return;
+      if (!map.has(row.sku)) {
+        map.set(row.sku, { sku: row.sku, name: row.name });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [fridgeStock]);
+
+  const availableAdjustmentLots = useMemo(() => {
+    if (!manualAdjustment.sku) return [];
+    return fridgeStock.filter(
+      (row) => row.sku === manualAdjustment.sku && row.qty > 0
+    );
+  }, [fridgeStock, manualAdjustment.sku]);
+
+  const availableInventoryLots = useMemo(() => {
+    if (!inventoryEntry.sku) return [];
+    return fridgeStock.filter(
+      (row) => row.sku === inventoryEntry.sku && row.qty >= 0
+    );
+  }, [fridgeStock, inventoryEntry.sku]);
+
+  const selectedInventoryRow = useMemo(() => {
+    if (!inventoryEntry.sku || !inventoryEntry.lot) return null;
+
+    return (
+      fridgeStock.find(
+        (row) =>
+          row.sku === inventoryEntry.sku && row.lot === inventoryEntry.lot
+      ) ?? null
+    );
+  }, [fridgeStock, inventoryEntry.sku, inventoryEntry.lot]);
+
+  const inventoryDifference = useMemo(() => {
+    if (!selectedInventoryRow) return null;
+
+    const countedQty = Number(inventoryEntry.countedQty);
+
+    if (!Number.isFinite(countedQty) || countedQty < 0) return null;
+
+    return countedQty - selectedInventoryRow.qty;
+  }, [selectedInventoryRow, inventoryEntry.countedQty]);
 
   const ignoredMovementsCount = useMemo(() => {
     return movements.filter((movement) =>
@@ -1109,6 +1173,149 @@ export default function App() {
     });
   }
 
+  function submitManualAdjustment() {
+    const qty = Number(manualAdjustment.qty);
+    const reason = manualAdjustment.reason.trim();
+
+    if (!manualAdjustment.sku || !manualAdjustment.lot) {
+      alert("Sélectionne un produit et un lot.");
+      return;
+    }
+
+    if (!Number.isFinite(qty) || qty === 0) {
+      alert("La quantité d'ajustement doit être différente de 0.");
+      return;
+    }
+
+    if (!reason) {
+      alert("Merci de saisir un motif.");
+      return;
+    }
+
+    const stockRow = fridgeStock.find(
+      (row) =>
+        row.sku === manualAdjustment.sku && row.lot === manualAdjustment.lot
+    );
+
+    if (!stockRow) {
+      alert("Lot introuvable dans le stock frigo.");
+      return;
+    }
+
+    const nextQty = stockRow.qty + qty;
+
+    if (nextQty < 0) {
+      alert("Stock insuffisant pour cet ajustement.");
+      return;
+    }
+
+    setFridgeStock((prev) =>
+      prev
+        .map((row) => {
+          if (
+            row.sku === manualAdjustment.sku &&
+            row.lot === manualAdjustment.lot
+          ) {
+            return {
+              ...row,
+              qty: row.qty + qty,
+              source: "Ajustement manuel",
+            };
+          }
+          return row;
+        })
+        .filter((row) => row.qty > 0)
+    );
+
+    setMovements((prev) => [
+      {
+        id: uid("MVT"),
+        type: "AJUSTEMENT",
+        sku: stockRow.sku,
+        name: stockRow.name,
+        lot: stockRow.lot,
+        qty,
+        reason,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    setManualAdjustment({
+      sku: "",
+      lot: "",
+      qty: 0,
+      reason: "",
+    });
+  }
+
+  function submitInventoryCount() {
+    const countedQty = Number(inventoryEntry.countedQty);
+    const reason = inventoryEntry.reason.trim();
+
+    if (!inventoryEntry.sku || !inventoryEntry.lot) {
+      alert("Sélectionne un produit et un lot.");
+      return;
+    }
+
+    if (!Number.isFinite(countedQty) || countedQty < 0) {
+      alert("La quantité comptée doit être positive ou nulle.");
+      return;
+    }
+
+    const stockRow = fridgeStock.find(
+      (row) => row.sku === inventoryEntry.sku && row.lot === inventoryEntry.lot
+    );
+
+    if (!stockRow) {
+      alert("Lot introuvable dans le stock frigo.");
+      return;
+    }
+
+    const diff = countedQty - stockRow.qty;
+
+    setFridgeStock((prev) =>
+      prev
+        .map((row) => {
+          if (
+            row.sku === inventoryEntry.sku &&
+            row.lot === inventoryEntry.lot
+          ) {
+            return {
+              ...row,
+              qty: countedQty,
+              source: "Inventaire manuel",
+            };
+          }
+          return row;
+        })
+        .filter((row) => row.qty > 0)
+    );
+
+    setMovements((prev) => [
+      {
+        id: uid("MVT"),
+        type: "INVENTAIRE",
+        sku: stockRow.sku,
+        name: stockRow.name,
+        lot: stockRow.lot,
+        qty: diff,
+        reason:
+          reason ||
+          `Inventaire : théorique ${stockRow.qty}, compté ${countedQty}`,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    setInventoryEntry({
+      sku: "",
+      lot: "",
+      countedQty: 0,
+      reason: "",
+    });
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className={`mx-auto px-4 py-4 ${getShellWidth(viewMode)}`}>
@@ -1218,8 +1425,10 @@ export default function App() {
                 <div key={product.id} className="rounded-2xl bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{product.sku}</p>
-                      <p className="text-sm text-slate-500">{product.name}</p>
+                      <p className="font-semibold leading-tight">
+                        {product.name}
+                      </p>
+                      <p className="text-xs text-slate-500">{product.sku}</p>
                     </div>
 
                     <div className="flex flex-col items-end gap-2">
@@ -1467,8 +1676,8 @@ export default function App() {
                       key={line.id}
                       className="rounded-2xl border bg-white p-3 text-left"
                     >
-                      <p className="font-semibold">{line.sku}</p>
-                      <p className="text-sm text-slate-500">{line.name}</p>
+                      <p className="font-semibold leading-tight">{line.name}</p>
+                      <p className="text-xs text-slate-500">{line.sku}</p>
                       <div
                         className={`mt-2 grid gap-2 text-xs ${
                           viewMode === "mobile" ? "grid-cols-2" : "grid-cols-4"
@@ -1525,8 +1734,10 @@ export default function App() {
                     <div key={line.id} className="rounded-2xl border p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold">{line.sku}</p>
-                          <p className="text-sm text-slate-500">{line.name}</p>
+                          <p className="font-semibold leading-tight">
+                            {line.name}
+                          </p>
+                          <p className="text-xs text-slate-500">{line.sku}</p>
                         </div>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
                           Besoin {need}
@@ -1665,17 +1876,209 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Stock frigo réel</h2>
               <span className="text-xs text-slate-500">
-                mis à jour par validation
+                mis à jour par validation et mouvements manuels
               </span>
             </div>
 
-            <div className={`mt-3 grid gap-3 ${getGridCols(viewMode)}`}>
+            <div
+              className={`mt-4 grid gap-4 ${
+                viewMode === "mobile" ? "grid-cols-1" : "grid-cols-2"
+              }`}
+            >
+              <div className="rounded-2xl border p-3">
+                <h3 className="font-semibold">Ajustement manuel</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Utiliser une quantité négative pour casse, perte, etc.
+                </p>
+
+                <div className="mt-3 space-y-2">
+                  <select
+                    className="w-full rounded border p-2"
+                    value={manualAdjustment.sku}
+                    onChange={(e) =>
+                      setManualAdjustment({
+                        sku: e.target.value,
+                        lot: "",
+                        qty: 0,
+                        reason: "",
+                      })
+                    }
+                  >
+                    <option value="">Choisir un produit</option>
+                    {stockProducts.map((product) => (
+                      <option key={product.sku} value={product.sku}>
+                        {product.sku} · {product.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="w-full rounded border p-2"
+                    value={manualAdjustment.lot}
+                    onChange={(e) =>
+                      setManualAdjustment((prev) => ({
+                        ...prev,
+                        lot: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Choisir un lot</option>
+                    {availableAdjustmentLots.map((row) => (
+                      <option key={row.id} value={row.lot}>
+                        {row.lot} · stock {row.qty}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    className="w-full rounded border p-2"
+                    type="number"
+                    value={manualAdjustment.qty}
+                    onChange={(e) =>
+                      setManualAdjustment((prev) => ({
+                        ...prev,
+                        qty: Number(e.target.value),
+                      }))
+                    }
+                    placeholder="Ex: -2 pour casse, +3 pour correction"
+                  />
+
+                  <input
+                    className="w-full rounded border p-2"
+                    value={manualAdjustment.reason}
+                    onChange={(e) =>
+                      setManualAdjustment((prev) => ({
+                        ...prev,
+                        reason: e.target.value,
+                      }))
+                    }
+                    placeholder="Motif : casse, perte, correction..."
+                  />
+
+                  <button
+                    type="button"
+                    className="w-full rounded bg-black p-2 text-white"
+                    onClick={submitManualAdjustment}
+                  >
+                    Enregistrer l'ajustement
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border p-3">
+                <h3 className="font-semibold">Inventaire</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  La quantité comptée remplace le stock théorique après
+                  validation.
+                </p>
+
+                <div className="mt-3 space-y-2">
+                  <select
+                    className="w-full rounded border p-2"
+                    value={inventoryEntry.sku}
+                    onChange={(e) =>
+                      setInventoryEntry({
+                        sku: e.target.value,
+                        lot: "",
+                        countedQty: 0,
+                        reason: "",
+                      })
+                    }
+                  >
+                    <option value="">Choisir un produit</option>
+                    {stockProducts.map((product) => (
+                      <option key={product.sku} value={product.sku}>
+                        {product.sku} · {product.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="w-full rounded border p-2"
+                    value={inventoryEntry.lot}
+                    onChange={(e) =>
+                      setInventoryEntry((prev) => ({
+                        ...prev,
+                        lot: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Choisir un lot</option>
+                    {availableInventoryLots.map((row) => (
+                      <option key={row.id} value={row.lot}>
+                        {row.lot} · théorique {row.qty}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    className="w-full rounded border p-2"
+                    type="number"
+                    min="0"
+                    value={inventoryEntry.countedQty}
+                    onChange={(e) =>
+                      setInventoryEntry((prev) => ({
+                        ...prev,
+                        countedQty: Number(e.target.value),
+                      }))
+                    }
+                    placeholder="Quantité comptée"
+                  />
+
+                  <input
+                    className="w-full rounded border p-2"
+                    value={inventoryEntry.reason}
+                    onChange={(e) =>
+                      setInventoryEntry((prev) => ({
+                        ...prev,
+                        reason: e.target.value,
+                      }))
+                    }
+                    placeholder="Commentaire inventaire"
+                  />
+
+                  {selectedInventoryRow && inventoryDifference !== null && (
+                    <div
+                      className={`rounded-2xl p-3 text-sm ring-1 ${
+                        inventoryDifference < 0
+                          ? "bg-rose-50 text-rose-800 ring-rose-100"
+                          : inventoryDifference > 0
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-100"
+                          : "bg-slate-50 text-slate-700 ring-slate-200"
+                      }`}
+                    >
+                      <p className="font-medium">
+                        Théorique : {selectedInventoryRow.qty} · Compté :{" "}
+                        {inventoryEntry.countedQty}
+                      </p>
+                      <p className="mt-1">
+                        Écart qui sera enregistré :{" "}
+                        <strong>
+                          {inventoryDifference > 0 ? "+" : ""}
+                          {inventoryDifference}
+                        </strong>
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="w-full rounded bg-black p-2 text-white"
+                    onClick={submitInventoryCount}
+                  >
+                    Valider l'inventaire
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className={`mt-4 grid gap-3 ${getGridCols(viewMode)}`}>
               {groupedFridgeStock.map(([sku, rows]) => (
                 <div key={sku} className="rounded-2xl border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{sku}</p>
-                      <p className="text-sm text-slate-500">{rows[0].name}</p>
+                      <p className="font-semibold">{rows[0].name}</p>
+                      <p className="text-xs text-slate-500">{sku}</p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
                       {rows.reduce((sum, row) => sum + row.qty, 0)}
@@ -1739,6 +2142,18 @@ export default function App() {
                 movements.map((movement) => {
                   const isIgnored = movement.reason.startsWith("Besoin ignoré");
 
+                  const badgeClass = isIgnored
+                    ? "bg-amber-100 text-amber-700"
+                    : movement.qty < 0
+                    ? "bg-rose-100 text-rose-700"
+                    : movement.type === "INVENTAIRE"
+                    ? "bg-sky-100 text-sky-700"
+                    : "bg-emerald-100 text-emerald-700";
+
+                  const badgeLabel = isIgnored
+                    ? "Ignoré"
+                    : `${movement.qty > 0 ? "+" : ""}${movement.qty}`;
+
                   return (
                     <div key={movement.id} className="rounded-2xl border p-3">
                       <div className="flex items-start justify-between gap-3">
@@ -1749,15 +2164,11 @@ export default function App() {
                           </p>
                         </div>
 
-                        {isIgnored ? (
-                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
-                            Ignoré
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">
-                            +{movement.qty}
-                          </span>
-                        )}
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${badgeClass}`}
+                        >
+                          {badgeLabel}
+                        </span>
                       </div>
 
                       <p className="mt-2 text-sm text-slate-600">
