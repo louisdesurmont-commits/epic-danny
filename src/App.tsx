@@ -215,15 +215,6 @@ function computeTransferNeed(
   return max0(target + ot - stock);
 }
 
-function toPositiveNumber(value: unknown, fallback = 0): number {
-  const n = Number(
-    String(value ?? "")
-      .replace(",", ".")
-      .trim()
-  );
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-}
-
 function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -270,6 +261,15 @@ function parseCSV(text: string): Record<string, string>[] {
 
 function getCellByIndex(row: Record<string, unknown>, index: number): string {
   return String(row[String(index)] ?? "").trim();
+}
+
+function toPositiveNumber(value: unknown, fallback = 0): number {
+  const n = Number(
+    String(value ?? "")
+      .replace(",", ".")
+      .trim()
+  );
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 function NavButton(props: {
@@ -342,6 +342,10 @@ export default function App() {
     const saved = window.localStorage.getItem(STORAGE_KEYS.movements);
     return saved ? (JSON.parse(saved) as MovementRow[]) : [];
   });
+
+  const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
@@ -423,17 +427,6 @@ export default function App() {
     return Object.values(byBoutique);
   }, [transferOrders]);
 
-  const otBySku = useMemo(() => {
-    return transferOrders.reduce<Record<string, number>>((acc, row) => {
-      acc[row.sku] = (acc[row.sku] ?? 0) + row.qty;
-      return acc;
-    }, {});
-  }, [transferOrders]);
-
-  const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
-    null
-  );
-
   const transferOrdersByBoutique = useMemo(() => {
     return transferOrders.reduce<Record<string, TransferOrderLine[]>>(
       (acc, row) => {
@@ -450,6 +443,14 @@ export default function App() {
     if (!selectedBoutiqueKey) return [];
     return transferOrdersByBoutique[selectedBoutiqueKey] ?? [];
   }, [selectedBoutiqueKey, transferOrdersByBoutique]);
+
+  const otBySku = useMemo(() => {
+    return transferOrders.reduce<Record<string, number>>((acc, row) => {
+      acc[row.sku] = (acc[row.sku] ?? 0) + row.qty;
+      return acc;
+    }, {});
+  }, [transferOrders]);
+
   const totalFridgeQty = useMemo(() => {
     return fridgeStock.reduce((sum, row) => sum + row.qty, 0);
   }, [fridgeStock]);
@@ -498,9 +499,17 @@ export default function App() {
   }
 
   function removeProduct(productId: string) {
-    setAssortmentProducts((prev) =>
-      prev.filter((product) => product.id !== productId)
-    );
+    setAssortmentProducts((prev) => {
+      const productToRemove = prev.find((product) => product.id === productId);
+
+      if (productToRemove) {
+        setDefrostList((current) =>
+          current.filter((line) => line.sku !== productToRemove.sku)
+        );
+      }
+
+      return prev.filter((product) => product.id !== productId);
+    });
   }
 
   function updateTransferQty(lineId: string, value: string) {
@@ -730,13 +739,16 @@ export default function App() {
 
   function regenerateDefrostNeeds(importedOrders?: TransferOrderLine[]) {
     const orders = importedOrders ?? transferOrders;
+
     const incomingBySku = orders.reduce<Record<string, number>>((acc, row) => {
       acc[row.sku] = (acc[row.sku] ?? 0) + row.qty;
       return acc;
     }, {});
 
-    setDefrostList(
-      assortmentProducts.map((product) => {
+    setDefrostList((prev) => {
+      const prevBySku = new Map(prev.map((line) => [line.sku, line]));
+
+      const nextLines = assortmentProducts.map((product) => {
         const stock = fridgeStock
           .filter((row) => row.sku === product.sku)
           .reduce((sum, row) => sum + row.qty, 0);
@@ -745,8 +757,30 @@ export default function App() {
         const target = product.targets.Ven;
         const need = computeTransferNeed(stock, target, ot);
 
+        const existingLine = prevBySku.get(product.sku);
+
+        if (existingLine?.validated) {
+          return {
+            ...existingLine,
+            stock,
+            ot,
+            target,
+            name: product.name,
+          };
+        }
+
+        const preservedAllocations =
+          existingLine && !existingLine.validated
+            ? existingLine.allocations.length > 0
+              ? existingLine.allocations.map((allocation, index) => ({
+                  ...allocation,
+                  qty: index === 0 ? need : allocation.qty,
+                }))
+              : [{ id: uid("ALLOC"), lot: "", qty: need }]
+            : [{ id: uid("ALLOC"), lot: "", qty: need }];
+
         return {
-          id: `DL-${product.sku}`,
+          id: existingLine?.id ?? `DL-${product.sku}`,
           sku: product.sku,
           name: product.name,
           stock,
@@ -754,10 +788,16 @@ export default function App() {
           target,
           transferQty: need,
           validated: false,
-          allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
+          allocations: preservedAllocations,
         } satisfies DefrostLine;
-      })
-    );
+      });
+
+      return nextLines;
+    });
+  }
+
+  function recomputeDefrostNeeds() {
+    regenerateDefrostNeeds();
   }
 
   function handleImportOTFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1276,11 +1316,22 @@ export default function App() {
 
         {screen === "besoins" && (
           <section className="rounded-3xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Besoins du jour</h2>
-              <button className="text-sm" type="button">
-                Imprimer A4
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded border px-3 py-2 text-sm"
+                  type="button"
+                  onClick={recomputeDefrostNeeds}
+                >
+                  Recalculer les besoins
+                </button>
+
+                <button className="text-sm" type="button">
+                  Imprimer A4
+                </button>
+              </div>
             </div>
 
             <div
