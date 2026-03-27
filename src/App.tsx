@@ -59,6 +59,7 @@ type MovementRow = {
   lot: string;
   qty: number;
   reason: string;
+  createdAt: string;
 };
 
 type TransferOrderLine = {
@@ -215,8 +216,42 @@ function computeTransferNeed(
   return max0(target + ot - stock);
 }
 
+function getTodayTargetKey(date = new Date()): keyof Targets {
+  const formatter = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    timeZone: "Europe/Paris",
+  });
+
+  const dayLabel = formatter.format(date).toLowerCase().replace(".", "");
+
+  const map: Record<string, keyof Targets> = {
+    lun: "Lun",
+    mar: "Mar",
+    mer: "Mer",
+    jeu: "Jeu",
+    ven: "Ven",
+    sam: "Sam",
+    dim: "Dim",
+  };
+
+  return map[dayLabel] ?? "Ven";
+}
+
+function getTodayTarget(targets: Targets, date = new Date()): number {
+  const key = getTodayTargetKey(date);
+  return targets[key];
+}
+
 function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+    timeZone: "Europe/Paris",
+  }).format(new Date(value));
 }
 
 function getViewMode(width: number): ViewMode {
@@ -299,6 +334,8 @@ export default function App() {
     const saved = window.localStorage.getItem(STORAGE_KEYS.screen);
     return (saved as Screen) || "gamme";
   });
+
+  const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "mobile";
@@ -757,7 +794,7 @@ export default function App() {
             .reduce((sum, row) => sum + row.qty, 0);
 
           const ot = incomingBySku[product.sku] ?? 0;
-          const target = product.targets.Ven;
+          const target = getTodayTarget(product.targets);
           const need = computeTransferNeed(stock, target, ot);
 
           const existingOpenLine = unvalidatedLines.find(
@@ -816,7 +853,9 @@ export default function App() {
             .filter((row) => row.sku === line.sku)
             .reduce((sum, row) => sum + row.qty, 0);
           const ot = incomingBySku[line.sku] ?? 0;
-          const target = product?.targets.Ven ?? line.target;
+          const target = product
+            ? getTodayTarget(product.targets)
+            : line.target;
 
           return {
             ...line,
@@ -1000,6 +1039,8 @@ export default function App() {
       return next;
     });
 
+    const now = new Date().toISOString();
+
     const newMovements: MovementRow[] = validAllocations.map((allocation) => ({
       id: uid("MVT"),
       type: "ENTREE_FRIGO",
@@ -1008,6 +1049,7 @@ export default function App() {
       lot: allocation.lot,
       qty: allocation.qty,
       reason: `Validation décongélation ${line.id}`,
+      createdAt: now,
     }));
 
     setMovements((prev) => [...newMovements, ...prev]);
@@ -1031,6 +1073,7 @@ export default function App() {
         lot: "-",
         qty: 0,
         reason: `Besoin ignoré ${line.id}`,
+        createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
@@ -1358,7 +1401,12 @@ export default function App() {
         {screen === "besoins" && (
           <section className="rounded-3xl bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">Besoins du jour</h2>
+              <div>
+                <h2 className="font-semibold">Besoins du jour</h2>
+                <p className="text-xs text-slate-500">
+                  Cible utilisée aujourd'hui : {todayTargetKey}
+                </p>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -1706,6 +1754,9 @@ export default function App() {
 
                       <p className="mt-2 text-sm text-slate-600">
                         Lot : {movement.lot}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Horodatage : {formatDateTime(movement.createdAt)}
                       </p>
                       <p className="text-xs text-slate-400">
                         {movement.reason}
