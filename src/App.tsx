@@ -346,6 +346,7 @@ export default function App() {
   const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
     null
   );
+  const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
@@ -746,58 +747,98 @@ export default function App() {
     }, {});
 
     setDefrostList((prev) => {
-      const prevBySku = new Map(prev.map((line) => [line.sku, line]));
+      const validatedLines = prev.filter((line) => line.validated);
+      const unvalidatedLines = prev.filter((line) => !line.validated);
 
-      const nextLines = assortmentProducts.map((product) => {
-        const stock = fridgeStock
-          .filter((row) => row.sku === product.sku)
-          .reduce((sum, row) => sum + row.qty, 0);
+      const nextUnvalidatedLines: DefrostLine[] = assortmentProducts.flatMap(
+        (product) => {
+          const stock = fridgeStock
+            .filter((row) => row.sku === product.sku)
+            .reduce((sum, row) => sum + row.qty, 0);
 
-        const ot = incomingBySku[product.sku] ?? 0;
-        const target = product.targets.Ven;
-        const need = computeTransferNeed(stock, target, ot);
+          const ot = incomingBySku[product.sku] ?? 0;
+          const target = product.targets.Ven;
+          const need = computeTransferNeed(stock, target, ot);
 
-        const existingLine = prevBySku.get(product.sku);
+          const existingOpenLine = unvalidatedLines.find(
+            (line) => line.sku === product.sku
+          );
 
-        if (existingLine?.validated) {
+          if (need <= 0) {
+            return [];
+          }
+
+          if (existingOpenLine) {
+            return [
+              {
+                ...existingOpenLine,
+                name: product.name,
+                stock,
+                ot,
+                target,
+                transferQty: need,
+                allocations:
+                  existingOpenLine.allocations.length > 0
+                    ? existingOpenLine.allocations.map((allocation, index) => ({
+                        ...allocation,
+                        qty: index === 0 ? need : allocation.qty,
+                      }))
+                    : [{ id: uid("ALLOC"), lot: "", qty: need }],
+              },
+            ];
+          }
+
+          return [
+            {
+              id: uid(`DL-${product.sku}`),
+              sku: product.sku,
+              name: product.name,
+              stock,
+              ot,
+              target,
+              transferQty: need,
+              validated: false,
+              allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
+            },
+          ];
+        }
+      );
+
+      const updatedValidatedLines = validatedLines
+        .filter((line) =>
+          assortmentProducts.some((product) => product.sku === line.sku)
+        )
+        .map((line) => {
+          const product = assortmentProducts.find(
+            (item) => item.sku === line.sku
+          );
+          const stock = fridgeStock
+            .filter((row) => row.sku === line.sku)
+            .reduce((sum, row) => sum + row.qty, 0);
+          const ot = incomingBySku[line.sku] ?? 0;
+          const target = product?.targets.Ven ?? line.target;
+
           return {
-            ...existingLine,
+            ...line,
+            name: product?.name ?? line.name,
             stock,
             ot,
             target,
-            name: product.name,
           };
-        }
+        });
 
-        const preservedAllocations =
-          existingLine && !existingLine.validated
-            ? existingLine.allocations.length > 0
-              ? existingLine.allocations.map((allocation, index) => ({
-                  ...allocation,
-                  qty: index === 0 ? need : allocation.qty,
-                }))
-              : [{ id: uid("ALLOC"), lot: "", qty: need }]
-            : [{ id: uid("ALLOC"), lot: "", qty: need }];
-
-        return {
-          id: existingLine?.id ?? `DL-${product.sku}`,
-          sku: product.sku,
-          name: product.name,
-          stock,
-          ot,
-          target,
-          transferQty: need,
-          validated: false,
-          allocations: preservedAllocations,
-        } satisfies DefrostLine;
-      });
-
-      return nextLines;
+      return [...updatedValidatedLines, ...nextUnvalidatedLines];
     });
   }
 
   function recomputeDefrostNeeds() {
     regenerateDefrostNeeds();
+
+    setRecomputeMessage("Besoins recalculés et mis à jour.");
+
+    window.setTimeout(() => {
+      setRecomputeMessage("");
+    }, 3000);
   }
 
   function handleImportOTFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1333,6 +1374,12 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {recomputeMessage && (
+              <div className="mt-3 rounded-2xl bg-sky-50 p-3 text-sm text-sky-800 ring-1 ring-sky-100">
+                {recomputeMessage}
+              </div>
+            )}
 
             <div
               className={`mt-3 ${
