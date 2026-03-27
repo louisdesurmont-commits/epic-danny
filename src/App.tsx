@@ -1,4 +1,8 @@
-import { loadAppData, saveAppData, clearAppData } from "./services/storage";
+import {
+  loadInitialAppData,
+  persistAppData,
+  resetAppData,
+} from "./services/appDataService";
 
 import NavButton from "./components/NavButton";
 
@@ -65,10 +69,10 @@ declare global {
   }
 }
 
-const initialData = loadAppData();
-
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(initialData.screen);
+  const [appData] = useState(() => loadInitialAppData());
+
+  const [screen, setScreen] = useState<Screen>(appData.screen);
 
   const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
 
@@ -78,24 +82,22 @@ export default function App() {
   });
 
   const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
-    initialData.assortmentProducts
+    appData.assortmentProducts
   );
 
   const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>(
-    initialData.transferOrders
+    appData.transferOrders
   );
 
   const [defrostList, setDefrostList] = useState<DefrostLine[]>(
-    initialData.defrostList
+    appData.defrostList
   );
 
   const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(
-    initialData.fridgeStock
+    appData.fridgeStock
   );
 
-  const [movements, setMovements] = useState<MovementRow[]>(
-    initialData.movements
-  );
+  const [movements, setMovements] = useState<MovementRow[]>(appData.movements);
 
   const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
     null
@@ -131,7 +133,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveAppData({
+    persistAppData({
       screen,
       assortmentProducts,
       transferOrders,
@@ -1104,7 +1106,7 @@ export default function App() {
               type="button"
               className="rounded border px-3 py-1"
               onClick={() => {
-                clearAppData();
+                resetAppData();
                 window.location.reload();
               }}
             >
