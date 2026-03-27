@@ -59,7 +59,7 @@ type MovementRow = {
   lot: string;
   qty: number;
   reason: string;
-  createdAt: string;
+  createdAt?: string;
 };
 
 type TransferOrderLine = {
@@ -246,12 +246,20 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function formatDateTime(value: string): string {
+function formatDateTime(value?: string): string {
+  if (!value) return "non horodaté";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "non horodaté";
+  }
+
   return new Intl.DateTimeFormat("fr-FR", {
     dateStyle: "short",
     timeStyle: "medium",
     timeZone: "Europe/Paris",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function getViewMode(width: number): ViewMode {
