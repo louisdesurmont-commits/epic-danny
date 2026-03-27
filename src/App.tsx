@@ -189,6 +189,19 @@ const OT_COLS = {
   qty: 5,
 } as const;
 
+const ASSORTMENT_COLS = {
+  sku: 0,
+  name: 1,
+  unitsPerCase: 2,
+  lun: 3,
+  mar: 4,
+  mer: 5,
+  jeu: 6,
+  ven: 7,
+  sam: 8,
+  dim: 9,
+} as const;
+
 function max0(n: number): number {
   return n < 0 ? 0 : n;
 }
@@ -200,6 +213,15 @@ function computeTransferNeed(
 ): number {
   if (ot <= 0) return 0;
   return max0(target + ot - stock);
+}
+
+function toPositiveNumber(value: unknown, fallback = 0): number {
+  const n = Number(
+    String(value ?? "")
+      .replace(",", ".")
+      .trim()
+  );
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 function uid(prefix: string): string {
@@ -408,6 +430,26 @@ export default function App() {
     }, {});
   }, [transferOrders]);
 
+  const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
+    null
+  );
+
+  const transferOrdersByBoutique = useMemo(() => {
+    return transferOrders.reduce<Record<string, TransferOrderLine[]>>(
+      (acc, row) => {
+        const key = `${row.boutiqueCode}__${row.boutiqueName}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(row);
+        return acc;
+      },
+      {}
+    );
+  }, [transferOrders]);
+
+  const selectedBoutiqueLines = useMemo(() => {
+    if (!selectedBoutiqueKey) return [];
+    return transferOrdersByBoutique[selectedBoutiqueKey] ?? [];
+  }, [selectedBoutiqueKey, transferOrdersByBoutique]);
   const totalFridgeQty = useMemo(() => {
     return fridgeStock.reduce((sum, row) => sum + row.qty, 0);
   }, [fridgeStock]);
@@ -520,45 +562,82 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx");
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+
+    if (!isXlsx && !isCsv) {
+      alert("Format non supporté. Merci d'importer un fichier .csv ou .xlsx");
+      event.target.value = "";
+      return;
+    }
+
+    if (isXlsx && !window.XLSX) {
+      alert(
+        "Import XLSX indisponible : la librairie Excel n'est pas chargée dans l'application."
+      );
+      event.target.value = "";
+      return;
+    }
+
     const reader = new FileReader();
+
+    reader.onerror = () => {
+      alert("Erreur de lecture du fichier.");
+      event.target.value = "";
+    };
 
     reader.onload = (loadEvent) => {
       const result = loadEvent.target?.result;
-      if (!result) return;
+      if (!result) {
+        alert("Le fichier est vide ou illisible.");
+        event.target.value = "";
+        return;
+      }
 
       let rows: Record<string, unknown>[] = [];
 
       try {
-        if (file.name.toLowerCase().endsWith(".xlsx") && window.XLSX) {
+        if (isXlsx && window.XLSX) {
           const workbook = window.XLSX.read(result, { type: "binary" });
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
-          rows = window.XLSX.utils.sheet_to_json(sheet) as Record<
-            string,
-            unknown
-          >[];
+          const xlsxRows = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+          }) as unknown[][];
+
+          rows = xlsxRows.map((row) =>
+            Object.fromEntries(
+              (Array.isArray(row) ? row : []).map((cell, index) => [
+                String(index),
+                cell,
+              ])
+            )
+          );
         } else {
           rows = parseCSV(String(result));
         }
       } catch (error) {
-        console.error("Import error", error);
+        console.error("Import gamme error", error);
+        alert("Impossible de lire ce fichier.");
+        event.target.value = "";
         return;
       }
 
-      const newProducts: Product[] = rows
+      if (rows.length === 0) {
+        alert("Aucune ligne détectée dans le fichier.");
+        event.target.value = "";
+        return;
+      }
+
+      const dataRows = rows.slice(1);
+
+      const newProducts: Product[] = dataRows
         .map((row) => {
-          const sku = String(
-            row["Numéro d'article"] ??
-              row["Numero d'article"] ??
-              row["sku"] ??
-              row["2"] ??
-              ""
-          ).trim();
-          const name = String(
-            row["Nom du produit"] ?? row["name"] ?? row["3"] ?? ""
-          ).trim();
-          const unitsPerCase = Number(
-            row["Nb unité / colis"] ?? row["unitsPerCase"] ?? row["4"] ?? 1
+          const sku = getCellByIndex(row, ASSORTMENT_COLS.sku);
+          const name = getCellByIndex(row, ASSORTMENT_COLS.name);
+          const unitsPerCase = toPositiveNumber(
+            getCellByIndex(row, ASSORTMENT_COLS.unitsPerCase),
+            1
           );
 
           if (!sku || !name) return null;
@@ -567,14 +646,48 @@ export default function App() {
             id: uid("GP"),
             sku,
             name,
-            unitsPerCase:
-              Number.isFinite(unitsPerCase) && unitsPerCase > 0
-                ? unitsPerCase
-                : 1,
-            targets: { Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0 },
+            unitsPerCase: unitsPerCase > 0 ? unitsPerCase : 1,
+            targets: {
+              Lun: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.lun),
+                0
+              ),
+              Mar: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.mar),
+                0
+              ),
+              Mer: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.mer),
+                0
+              ),
+              Jeu: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.jeu),
+                0
+              ),
+              Ven: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.ven),
+                0
+              ),
+              Sam: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.sam),
+                0
+              ),
+              Dim: toPositiveNumber(
+                getCellByIndex(row, ASSORTMENT_COLS.dim),
+                0
+              ),
+            },
           } satisfies Product;
         })
         .filter((product): product is Product => product !== null);
+
+      if (newProducts.length === 0) {
+        console.log("Première ligne brute :", rows[0]);
+        console.log("Première ligne de données :", dataRows[0]);
+        alert("Aucune ligne exploitable trouvée dans le fichier gamme.");
+        event.target.value = "";
+        return;
+      }
 
       setAssortmentProducts((prev) => {
         const map = new Map(prev.map((product) => [product.sku, product]));
@@ -586,6 +699,7 @@ export default function App() {
               ...existing,
               name: product.name,
               unitsPerCase: product.unitsPerCase,
+              targets: product.targets,
             });
           } else {
             map.set(product.sku, product);
@@ -595,10 +709,13 @@ export default function App() {
         return Array.from(map.values());
       });
 
+      alert(
+        `${newProducts.length} produit(s) importé(s) avec cibles journalières.`
+      );
       event.target.value = "";
     };
 
-    if (file.name.toLowerCase().endsWith(".xlsx")) {
+    if (isXlsx) {
       reader.readAsBinaryString(file);
     } else {
       reader.readAsText(file, "utf-8");
@@ -744,6 +861,7 @@ export default function App() {
 
       setTransferOrders(importedOrders);
       regenerateDefrostNeeds(importedOrders);
+      setSelectedBoutiqueKey(null);
 
       alert(`${importedOrders.length} ligne(s) OT importée(s).`);
       event.target.value = "";
@@ -1000,8 +1118,9 @@ export default function App() {
                   </div>
 
                   <p className="mt-2 text-[10px] text-slate-400">
-                    Import Excel attendu : Numéro d'article | Nom du produit |
-                    Nb unité / colis
+                    Import attendu par colonnes : 0 article | 1 description | 2
+                    u/colis | 3 Lun | 4 Mar | 5 Mer | 6 Jeu | 7 Ven | 8 Sam | 9
+                    Dim
                   </p>
                   <p className="mt-1 text-[10px] text-slate-400">
                     Édition directe → sauvegarde automatique
@@ -1052,46 +1171,86 @@ export default function App() {
 
               {otSummary.length > 0 && (
                 <div className={`grid gap-3 ${getGridCols(viewMode)}`}>
-                  {otSummary.map((item) => (
-                    <div
-                      key={`${item.boutiqueCode}-${item.boutiqueName}`}
-                      className="rounded-2xl border p-3"
-                    >
-                      <p className="font-semibold">{item.boutiqueName}</p>
-                      <p className="text-sm text-slate-500">
-                        Code boutique : {item.boutiqueCode}
-                      </p>
-                      <div className="mt-2 flex items-center justify-between text-sm">
-                        <span>Lignes</span>
-                        <strong>{item.lines}</strong>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between text-sm">
-                        <span>Quantité OT</span>
-                        <strong>{item.qty}</strong>
-                      </div>
-                    </div>
-                  ))}
+                  {otSummary.map((item) => {
+                    const boutiqueKey = `${item.boutiqueCode}__${item.boutiqueName}`;
+                    const isSelected = selectedBoutiqueKey === boutiqueKey;
+
+                    return (
+                      <button
+                        key={boutiqueKey}
+                        type="button"
+                        onClick={() => setSelectedBoutiqueKey(boutiqueKey)}
+                        className={`rounded-2xl border p-3 text-left transition ${
+                          isSelected
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <p className="font-semibold">{item.boutiqueName}</p>
+                        <p
+                          className={`text-sm ${
+                            isSelected ? "text-slate-200" : "text-slate-500"
+                          }`}
+                        >
+                          Code boutique : {item.boutiqueCode}
+                        </p>
+                        <div className="mt-2 flex items-center justify-between text-sm">
+                          <span>Lignes</span>
+                          <strong>{item.lines}</strong>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-sm">
+                          <span>Quantité OT</span>
+                          <strong>{item.qty}</strong>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
               {transferOrders.length > 0 && (
                 <div className="rounded-2xl border p-3">
-                  <p className="font-semibold">Aperçu des lignes OT</p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {transferOrders.slice(0, 8).map((row) => (
-                      <div key={row.id} className="rounded bg-slate-50 p-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span>
-                            {row.boutiqueName} · {row.sku}
-                          </span>
-                          <strong>{row.qty}</strong>
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {row.name} · Réception {row.receptionDate}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold">
+                      Lignes d'OT de la boutique sélectionnée
+                    </p>
+                    {selectedBoutiqueKey && (
+                      <button
+                        type="button"
+                        className="text-sm text-slate-500 underline"
+                        onClick={() => setSelectedBoutiqueKey(null)}
+                      >
+                        Effacer la sélection
+                      </button>
+                    )}
                   </div>
+
+                  {!selectedBoutiqueKey ? (
+                    <p className="mt-3 text-sm text-slate-500">
+                      Sélectionne une boutique ci-dessus pour afficher toutes
+                      ses lignes d'OT.
+                    </p>
+                  ) : selectedBoutiqueLines.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-500">
+                      Aucune ligne OT pour cette boutique.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-2 text-sm">
+                      {selectedBoutiqueLines.map((row) => (
+                        <div key={row.id} className="rounded bg-slate-50 p-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>
+                              {row.sku} · {row.name}
+                            </span>
+                            <strong>{row.qty}</strong>
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            Réception {row.receptionDate}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
