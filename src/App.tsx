@@ -1,3 +1,5 @@
+import { loadAppData, saveAppData, clearAppData } from "./services/storage";
+
 import NavButton from "./components/NavButton";
 
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
@@ -13,20 +15,11 @@ import type {
   ViewMode,
 } from "./types";
 
-import {
-  assortmentProductsInitial,
-  defrostListInitial,
-  fridgeStockInitial,
-  STORAGE_KEYS,
-  OT_COLS,
-  ASSORTMENT_COLS,
-} from "./constants";
+import { OT_COLS, ASSORTMENT_COLS } from "./constants";
 
 import {
-  formatDateTime,
   getTodayTargetKey,
   getViewMode,
-  getGridCols,
   getShellWidth,
   getStatsCols,
 } from "./utils/format";
@@ -72,12 +65,10 @@ declare global {
   }
 }
 
+const initialData = loadAppData();
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(() => {
-    if (typeof window === "undefined") return "gamme";
-    const saved = window.localStorage.getItem(STORAGE_KEYS.screen);
-    return (saved as Screen) || "gamme";
-  });
+  const [screen, setScreen] = useState<Screen>(initialData.screen);
 
   const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
 
@@ -87,42 +78,24 @@ export default function App() {
   });
 
   const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
-    () => {
-      if (typeof window === "undefined") return assortmentProductsInitial;
-      const saved = window.localStorage.getItem(
-        STORAGE_KEYS.assortmentProducts
-      );
-      return saved
-        ? (JSON.parse(saved) as Product[])
-        : assortmentProductsInitial;
-    }
+    initialData.assortmentProducts
   );
 
   const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>(
-    () => {
-      if (typeof window === "undefined") return [];
-      const saved = window.localStorage.getItem(STORAGE_KEYS.transferOrders);
-      return saved ? (JSON.parse(saved) as TransferOrderLine[]) : [];
-    }
+    initialData.transferOrders
   );
 
-  const [defrostList, setDefrostList] = useState<DefrostLine[]>(() => {
-    if (typeof window === "undefined") return defrostListInitial;
-    const saved = window.localStorage.getItem(STORAGE_KEYS.defrostList);
-    return saved ? (JSON.parse(saved) as DefrostLine[]) : defrostListInitial;
-  });
+  const [defrostList, setDefrostList] = useState<DefrostLine[]>(
+    initialData.defrostList
+  );
 
-  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(() => {
-    if (typeof window === "undefined") return fridgeStockInitial;
-    const saved = window.localStorage.getItem(STORAGE_KEYS.fridgeStock);
-    return saved ? (JSON.parse(saved) as FridgeStockRow[]) : fridgeStockInitial;
-  });
+  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(
+    initialData.fridgeStock
+  );
 
-  const [movements, setMovements] = useState<MovementRow[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = window.localStorage.getItem(STORAGE_KEYS.movements);
-    return saved ? (JSON.parse(saved) as MovementRow[]) : [];
-  });
+  const [movements, setMovements] = useState<MovementRow[]>(
+    initialData.movements
+  );
 
   const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
     null
@@ -158,43 +131,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.screen, screen);
-  }, [screen]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.assortmentProducts,
-      JSON.stringify(assortmentProducts)
-    );
-  }, [assortmentProducts]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.transferOrders,
-      JSON.stringify(transferOrders)
-    );
-  }, [transferOrders]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.defrostList,
-      JSON.stringify(defrostList)
-    );
-  }, [defrostList]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.fridgeStock,
-      JSON.stringify(fridgeStock)
-    );
-  }, [fridgeStock]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.movements,
-      JSON.stringify(movements)
-    );
-  }, [movements]);
+    saveAppData({
+      screen,
+      assortmentProducts,
+      transferOrders,
+      defrostList,
+      fridgeStock,
+      movements,
+    });
+  }, [
+    screen,
+    assortmentProducts,
+    transferOrders,
+    defrostList,
+    fridgeStock,
+    movements,
+  ]);
 
   const remainingLines = useMemo(() => {
     return defrostList.filter(
@@ -321,17 +273,6 @@ export default function App() {
 
     return countedQty - selectedInventoryRow.qty;
   }, [selectedInventoryRow, inventoryEntry.countedQty]);
-
-  const ignoredMovementsCount = useMemo(() => {
-    return movements.filter((movement) =>
-      movement.reason.startsWith("Besoin ignoré")
-    ).length;
-  }, [movements]);
-
-  const stockEntryMovementsCount = useMemo(() => {
-    return movements.filter((movement) => movement.type === "ENTREE_FRIGO")
-      .length;
-  }, [movements]);
 
   const movementTypeOptions = useMemo(() => {
     return Array.from(
@@ -1163,9 +1104,7 @@ export default function App() {
               type="button"
               className="rounded border px-3 py-1"
               onClick={() => {
-                Object.values(STORAGE_KEYS).forEach((key) =>
-                  window.localStorage.removeItem(key)
-                );
+                clearAppData();
                 window.location.reload();
               }}
             >
