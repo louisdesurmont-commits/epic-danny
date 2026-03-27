@@ -1,8 +1,15 @@
-# React + Tailwind
+# App décongélation & stock frigo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules. One top of the standard Vite setup, [tailwindcss](https://tailwindcss.com/) is installed and ready to be used in React components.
+## Lancer le projet
+pnpm install
+pnpm dev
 
-Additional references:
-* [Getting started with Vite](https://vitejs.dev/guide/)
-* [Tailwind documentation](https://tailwindcss.com/docs/installation)
+## Structure
+- src/screens : écrans de l'application
+- src/components : composants UI
+- src/utils : logique métier
+- src/services : accès aux données
 
+## Remarque
+Le stockage actuel est provisoire (localStorage).
+Objectif : base de données multi-utilisateur.
