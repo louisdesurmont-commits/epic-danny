@@ -578,7 +578,7 @@ export default function App() {
 
   function regenerateDefrostNeeds(importedOrders?: TransferOrderLine[]) {
     const orders = importedOrders ?? transferOrders;
-  
+
     setDefrostList((prev) =>
       regenerateDefrostNeedsData({
         orders,
@@ -674,6 +674,7 @@ export default function App() {
 
       const importedOrders: TransferOrderLine[] = dataRows
         .map((row) => {
+          const otNumber = getCellByIndex(row, OT_COLS.otNumber);
           const boutiqueName = getCellByIndex(row, OT_COLS.boutiqueName);
           const boutiqueCode = getCellByIndex(row, OT_COLS.boutiqueCode);
           const sku = getCellByIndex(row, OT_COLS.sku);
@@ -682,10 +683,12 @@ export default function App() {
           const qtyRaw = getCellByIndex(row, OT_COLS.qty);
           const qty = Number(qtyRaw.replace(",", "."));
 
-          if (!boutiqueName || !boutiqueCode || !sku || !name) return null;
+          if (!otNumber || !boutiqueName || !boutiqueCode || !sku || !name)
+            return null;
 
           return {
             id: uid("OT"),
+            otNumber,
             boutiqueName,
             boutiqueCode,
             sku,

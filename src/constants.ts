@@ -81,12 +81,13 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const OT_COLS = {
-  boutiqueName: 0,
-  boutiqueCode: 1,
-  sku: 2,
-  name: 3,
-  receptionDate: 4,
-  qty: 5,
+  otNumber: 0,
+  boutiqueName: 1,
+  boutiqueCode: 2,
+  sku: 3,
+  name: 4,
+  receptionDate: 5,
+  qty: 6,
 } as const;
 
 export const ASSORTMENT_COLS = {

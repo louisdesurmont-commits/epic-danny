@@ -43,8 +43,8 @@ export default function OTScreen({
       </div>
 
       <p className="mt-2 text-xs text-slate-500">
-        Import basé sur l'ordre des colonnes : 0 boutique | 1 code boutique | 2
-        article | 3 nom produit | 4 date réception | 5 quantité
+        Import basé sur l'ordre des colonnes : 0 n° OT | 1 boutique | 2 code
+        boutique | 3 article | 4 nom produit | 5 date réception | 6 quantité
       </p>
 
       <div className="mt-4 grid gap-3">
@@ -136,10 +136,11 @@ export default function OTScreen({
                   <div key={row.id} className="rounded bg-slate-50 p-2">
                     <div className="flex items-center justify-between gap-3">
                       <span>
-                        {row.sku} · {row.name}
+                        OT {row.otNumber} · {row.sku} · {row.name}
                       </span>
                       <strong>{row.qty}</strong>
                     </div>
+
                     <div className="text-xs text-slate-500">
                       Réception {row.receptionDate}
                     </div>
