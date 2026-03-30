@@ -1,32 +1,37 @@
 import type { TransferOrderLine, ViewMode } from "../types";
 import { getGridCols } from "../utils/format";
-
-type OTSummaryItem = {
-  boutiqueName: string;
-  boutiqueCode: string;
-  lines: number;
-  qty: number;
-};
+import type {
+  BoutiqueSummaryItem,
+  OtSummaryItem,
+} from "../utils/transferOrders";
 
 type Props = {
   viewMode: ViewMode;
   transferOrders: TransferOrderLine[];
-  otSummary: OTSummaryItem[];
+  boutiqueSummary: BoutiqueSummaryItem[];
   selectedBoutiqueKey: string | null;
-  setSelectedBoutiqueKey: React.Dispatch<React.SetStateAction<string | null>>;
-  selectedBoutiqueLines: TransferOrderLine[];
+  onSelectBoutique: (boutiqueKey: string | null) => void;
+  selectedOtKey: string | null;
+  onSelectOt: (otKey: string | null) => void;
+  selectedBoutiqueOtSummary: OtSummaryItem[];
+  selectedOtLines: TransferOrderLine[];
   handleImportOTFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
 };
 
 export default function OTScreen({
   viewMode,
   transferOrders,
-  otSummary,
+  boutiqueSummary,
   selectedBoutiqueKey,
-  setSelectedBoutiqueKey,
-  selectedBoutiqueLines,
+  onSelectBoutique,
+  selectedOtKey,
+  onSelectOt,
+  selectedBoutiqueOtSummary,
+  selectedOtLines,
   handleImportOTFile,
 }: Props) {
+  const totalQty = transferOrders.reduce((sum, row) => sum + row.qty, 0);
+
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
@@ -51,7 +56,7 @@ export default function OTScreen({
         <div className="rounded-2xl bg-slate-50 p-3 text-sm">
           <div className="flex items-center justify-between">
             <span>Boutiques importées</span>
-            <strong>{otSummary.length}</strong>
+            <strong>{boutiqueSummary.length}</strong>
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span>Lignes OT</span>
@@ -59,23 +64,20 @@ export default function OTScreen({
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span>Quantité totale OT</span>
-            <strong>
-              {transferOrders.reduce((sum, row) => sum + row.qty, 0)}
-            </strong>
+            <strong>{totalQty}</strong>
           </div>
         </div>
 
-        {otSummary.length > 0 && (
+        {boutiqueSummary.length > 0 && (
           <div className={`grid gap-3 ${getGridCols(viewMode)}`}>
-            {otSummary.map((item) => {
-              const boutiqueKey = `${item.boutiqueCode}__${item.boutiqueName}`;
-              const isSelected = selectedBoutiqueKey === boutiqueKey;
+            {boutiqueSummary.map((item) => {
+              const isSelected = selectedBoutiqueKey === item.key;
 
               return (
                 <button
-                  key={boutiqueKey}
+                  key={item.key}
                   type="button"
-                  onClick={() => setSelectedBoutiqueKey(boutiqueKey)}
+                  onClick={() => onSelectBoutique(item.key)}
                   className={`rounded-2xl border p-3 text-left transition ${
                     isSelected
                       ? "border-slate-900 bg-slate-900 text-white"
@@ -91,6 +93,10 @@ export default function OTScreen({
                     Code boutique : {item.boutiqueCode}
                   </p>
                   <div className="mt-2 flex items-center justify-between text-sm">
+                    <span>OT</span>
+                    <strong>{item.otCount}</strong>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-sm">
                     <span>Lignes</span>
                     <strong>{item.lines}</strong>
                   </div>
@@ -107,14 +113,12 @@ export default function OTScreen({
         {transferOrders.length > 0 && (
           <div className="rounded-2xl border p-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="font-semibold">
-                Lignes d'OT de la boutique sélectionnée
-              </p>
+              <p className="font-semibold">OT de la boutique sélectionnée</p>
               {selectedBoutiqueKey && (
                 <button
                   type="button"
                   className="text-sm text-slate-500 underline"
-                  onClick={() => setSelectedBoutiqueKey(null)}
+                  onClick={() => onSelectBoutique(null)}
                 >
                   Effacer la sélection
                 </button>
@@ -123,26 +127,95 @@ export default function OTScreen({
 
             {!selectedBoutiqueKey ? (
               <p className="mt-3 text-sm text-slate-500">
-                Sélectionne une boutique ci-dessus pour afficher toutes ses
-                lignes d'OT.
+                Sélectionne une boutique ci-dessus pour afficher ses OT.
               </p>
-            ) : selectedBoutiqueLines.length === 0 ? (
+            ) : selectedBoutiqueOtSummary.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">
                 Aucune ligne OT pour cette boutique.
               </p>
             ) : (
+              <div className="mt-3 grid gap-3">
+                {selectedBoutiqueOtSummary.map((item) => {
+                  const isSelected = selectedOtKey === item.key;
+
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => onSelectOt(item.key)}
+                      className={`rounded-2xl border p-3 text-left transition ${
+                        isSelected
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-semibold">OT {item.otNumber}</p>
+                        <strong>{item.qty}</strong>
+                      </div>
+
+                      <p
+                        className={`mt-1 text-sm ${
+                          isSelected ? "text-slate-200" : "text-slate-500"
+                        }`}
+                      >
+                        {item.lines} ligne{item.lines > 1 ? "s" : ""}
+                      </p>
+
+                      <p
+                        className={`mt-1 text-xs ${
+                          isSelected ? "text-slate-300" : "text-slate-500"
+                        }`}
+                      >
+                        Réception :{" "}
+                        {item.receptionDates.length > 0
+                          ? item.receptionDates.join(", ")
+                          : "non renseignée"}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {transferOrders.length > 0 && (
+          <div className="rounded-2xl border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-semibold">Lignes de l’OT sélectionné</p>
+              {selectedOtKey && (
+                <button
+                  type="button"
+                  className="text-sm text-slate-500 underline"
+                  onClick={() => onSelectOt(null)}
+                >
+                  Effacer la sélection
+                </button>
+              )}
+            </div>
+
+            {!selectedOtKey ? (
+              <p className="mt-3 text-sm text-slate-500">
+                Sélectionne un OT ci-dessus pour afficher ses lignes.
+              </p>
+            ) : selectedOtLines.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">
+                Aucune ligne pour cet OT.
+              </p>
+            ) : (
               <div className="mt-3 space-y-2 text-sm">
-                {selectedBoutiqueLines.map((row) => (
+                {selectedOtLines.map((row) => (
                   <div key={row.id} className="rounded bg-slate-50 p-2">
                     <div className="flex items-center justify-between gap-3">
                       <span>
-                        OT {row.otNumber} · {row.sku} · {row.name}
+                        {row.sku} · {row.name}
                       </span>
                       <strong>{row.qty}</strong>
                     </div>
 
-                    <div className="text-xs text-slate-500">
-                      Réception {row.receptionDate}
+                    <div className="mt-1 text-xs text-slate-500">
+                      OT {row.otNumber} · Réception {row.receptionDate}
                     </div>
                   </div>
                 ))}

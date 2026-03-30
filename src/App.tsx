@@ -51,6 +51,12 @@ import ValidationScreen from "./screens/ValidationScreen";
 
 import StockScreen from "./screens/StockScreen";
 
+import {
+  buildBoutiqueSummary,
+  buildOtSummaryForBoutique,
+  getLinesForSelectedOt,
+} from "./utils/transferOrders";
+
 declare global {
   interface Window {
     XLSX?: {
@@ -101,9 +107,9 @@ export default function App() {
 
   const [movements, setMovements] = useState<MovementRow[]>(appData.movements);
 
-  const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
-    null
-  );
+  const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(null);
+  const [selectedOtKey, setSelectedOtKey] = useState<string | null>(null);
+
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
   const [movementFilters, setMovementFilters] = useState({
@@ -209,6 +215,21 @@ export default function App() {
       return acc;
     }, {});
   }, [transferOrders]);
+
+  const boutiqueSummary = useMemo(
+    () => buildBoutiqueSummary(transferOrders),
+    [transferOrders]
+  );
+  
+  const selectedBoutiqueOtSummary = useMemo(
+    () => buildOtSummaryForBoutique(transferOrders, selectedBoutiqueKey),
+    [transferOrders, selectedBoutiqueKey]
+  );
+  
+  const selectedOtLines = useMemo(
+    () => getLinesForSelectedOt(transferOrders, selectedOtKey),
+    [transferOrders, selectedOtKey]
+  );
 
   const totalFridgeQty = useMemo(() => {
     return fridgeStock.reduce((sum, row) => sum + row.qty, 0);
@@ -574,6 +595,11 @@ export default function App() {
     } else {
       reader.readAsText(file, "utf-8");
     }
+  }
+
+  function handleSelectBoutique(boutiqueKey: string | null) {
+    setSelectedBoutiqueKey(boutiqueKey);
+    setSelectedOtKey(null);
   }
 
   function regenerateDefrostNeeds(importedOrders?: TransferOrderLine[]) {
@@ -1063,10 +1089,13 @@ export default function App() {
           <OTScreen
             viewMode={viewMode}
             transferOrders={transferOrders}
-            otSummary={otSummary}
+            boutiqueSummary={boutiqueSummary}
             selectedBoutiqueKey={selectedBoutiqueKey}
-            setSelectedBoutiqueKey={setSelectedBoutiqueKey}
-            selectedBoutiqueLines={selectedBoutiqueLines}
+            onSelectBoutique={handleSelectBoutique}
+            selectedOtKey={selectedOtKey}
+            onSelectOt={setSelectedOtKey}
+            selectedBoutiqueOtSummary={selectedBoutiqueOtSummary}
+            selectedOtLines={selectedOtLines}
             handleImportOTFile={handleImportOTFile}
           />
         )}
