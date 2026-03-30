@@ -1,6 +1,7 @@
 import type {
   Product,
   TransferOrderLine,
+  Shipment,
   DefrostLine,
   FridgeStockRow,
   MovementRow,
@@ -17,6 +18,7 @@ export type AppData = {
   screen: Screen;
   assortmentProducts: Product[];
   transferOrders: TransferOrderLine[];
+  shipments: Shipment[];
   defrostList: DefrostLine[];
   fridgeStock: FridgeStockRow[];
   movements: MovementRow[];
@@ -29,6 +31,7 @@ export function getDefaultAppData(): AppData {
     screen: "gamme",
     assortmentProducts: assortmentProductsInitial,
     transferOrders: [],
+    shipments: [],
     defrostList: defrostListInitial,
     fridgeStock: fridgeStockInitial,
     movements: [],
@@ -54,6 +57,7 @@ export function loadAppData(): AppData {
       assortmentProducts:
         parsed.assortmentProducts ?? assortmentProductsInitial,
       transferOrders: parsed.transferOrders ?? [],
+      shipments: parsed.shipments ?? [],
       defrostList: parsed.defrostList ?? defrostListInitial,
       fridgeStock: parsed.fridgeStock ?? fridgeStockInitial,
       movements: parsed.movements ?? [],

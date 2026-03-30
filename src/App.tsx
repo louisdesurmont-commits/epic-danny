@@ -15,6 +15,8 @@ import type {
   FridgeStockRow,
   MovementRow,
   TransferOrderLine,
+  Shipment,
+  ShipmentLineDraft,
   Screen,
   ViewMode,
 } from "./types";
@@ -44,6 +46,8 @@ import GammeScreen from "./screens/GammeScreen";
 import ValidationScreen from "./screens/ValidationScreen";
 
 import StockScreen from "./screens/StockScreen";
+
+import ExpeditionsScreen from "./screens/ExpeditionsScreen";
 
 import {
   buildBoutiqueSummary,
@@ -79,6 +83,21 @@ import {
   applyInventoryCountToFridgeStock,
   buildInventoryMovement,
 } from "./utils/fridgeStockMutations";
+
+import {
+  getOpenTransferOrders,
+  getAvailableShipmentDates,
+  getBoutiquesForShipmentDate,
+  getOtNumbersForShipmentSelection,
+  getTransferOrderLinesForShipmentSelection,
+  buildShipmentDraftForOt,
+  updateShipmentDraftAllocationQty,
+  updateShipmentDraftAllocationLot,
+  validateShipmentDraft,
+  buildShipmentFromDraft,
+  applyShipmentToStock,
+  buildShipmentMovements,
+} from "./utils/shipments";
 
 declare global {
   interface Window {
@@ -135,6 +154,15 @@ export default function App() {
   );
   const [selectedOtKey, setSelectedOtKey] = useState<string | null>(null);
 
+  const [selectedShipmentDate, setSelectedShipmentDate] = useState<
+    string | null
+  >(null);
+  const [selectedShipmentBoutiqueKey, setSelectedShipmentBoutiqueKey] =
+    useState<string | null>(null);
+  const [selectedShipmentOtNumber, setSelectedShipmentOtNumber] = useState<
+    string | null
+  >(null);
+
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
   const [movementFilters, setMovementFilters] = useState({
@@ -163,6 +191,53 @@ export default function App() {
   );
   const [inventoryEntry, setInventoryEntry] = useState(emptyInventoryEntry);
 
+  const [shipments, setShipments] = useState<Shipment[]>(appData.shipments);
+
+  const [shipmentDraftLines, setShipmentDraftLines] = useState<
+    ShipmentLineDraft[]
+  >([]);
+
+  const openTransferOrders = useMemo(
+    () => getOpenTransferOrders(transferOrders, shipments),
+    [transferOrders, shipments]
+  );
+
+  const availableShipmentDates = useMemo(
+    () => getAvailableShipmentDates(openTransferOrders),
+    [openTransferOrders]
+  );
+
+  const availableShipmentBoutiques = useMemo(
+    () => getBoutiquesForShipmentDate(openTransferOrders, selectedShipmentDate),
+    [openTransferOrders, selectedShipmentDate]
+  );
+
+  const availableShipmentOtNumbers = useMemo(
+    () =>
+      getOtNumbersForShipmentSelection(
+        openTransferOrders,
+        selectedShipmentDate,
+        selectedShipmentBoutiqueKey
+      ),
+    [openTransferOrders, selectedShipmentDate, selectedShipmentBoutiqueKey]
+  );
+
+  const selectedShipmentOtLines = useMemo(
+    () =>
+      getTransferOrderLinesForShipmentSelection(
+        openTransferOrders,
+        selectedShipmentDate,
+        selectedShipmentBoutiqueKey,
+        selectedShipmentOtNumber
+      ),
+    [
+      openTransferOrders,
+      selectedShipmentDate,
+      selectedShipmentBoutiqueKey,
+      selectedShipmentOtNumber,
+    ]
+  );
+
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
     handleResize();
@@ -175,6 +250,7 @@ export default function App() {
       screen,
       assortmentProducts,
       transferOrders,
+      shipments,
       defrostList,
       fridgeStock,
       movements,
@@ -183,10 +259,67 @@ export default function App() {
     screen,
     assortmentProducts,
     transferOrders,
+    shipments,
     defrostList,
     fridgeStock,
     movements,
   ]);
+
+  useEffect(() => {
+    if (availableShipmentDates.length === 1 && !selectedShipmentDate) {
+      setSelectedShipmentDate(availableShipmentDates[0]);
+    }
+  }, [availableShipmentDates, selectedShipmentDate]);
+
+  useEffect(() => {
+    setSelectedShipmentBoutiqueKey(null);
+    setSelectedShipmentOtNumber(null);
+  }, [selectedShipmentDate]);
+
+  useEffect(() => {
+    if (
+      selectedShipmentDate &&
+      availableShipmentBoutiques.length === 1 &&
+      !selectedShipmentBoutiqueKey
+    ) {
+      setSelectedShipmentBoutiqueKey(availableShipmentBoutiques[0].key);
+    }
+  }, [
+    selectedShipmentDate,
+    availableShipmentBoutiques,
+    selectedShipmentBoutiqueKey,
+  ]);
+
+  useEffect(() => {
+    setSelectedShipmentOtNumber(null);
+  }, [selectedShipmentBoutiqueKey]);
+
+  useEffect(() => {
+    if (
+      selectedShipmentDate &&
+      selectedShipmentBoutiqueKey &&
+      availableShipmentOtNumbers.length === 1 &&
+      !selectedShipmentOtNumber
+    ) {
+      setSelectedShipmentOtNumber(availableShipmentOtNumbers[0]);
+    }
+  }, [
+    selectedShipmentDate,
+    selectedShipmentBoutiqueKey,
+    availableShipmentOtNumbers,
+    selectedShipmentOtNumber,
+  ]);
+
+  useEffect(() => {
+    if (selectedShipmentOtLines.length === 0) {
+      setShipmentDraftLines([]);
+      return;
+    }
+
+    setShipmentDraftLines(
+      buildShipmentDraftForOt(selectedShipmentOtLines, fridgeStock)
+    );
+  }, [selectedShipmentOtLines, fridgeStock]);
 
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
@@ -199,18 +332,18 @@ export default function App() {
   );
 
   const boutiqueSummary = useMemo(
-    () => buildBoutiqueSummary(transferOrders),
-    [transferOrders]
+    () => buildBoutiqueSummary(openTransferOrders),
+    [openTransferOrders]
   );
 
   const selectedBoutiqueOtSummary = useMemo(
-    () => buildOtSummaryForBoutique(transferOrders, selectedBoutiqueKey),
-    [transferOrders, selectedBoutiqueKey]
+    () => buildOtSummaryForBoutique(openTransferOrders, selectedBoutiqueKey),
+    [openTransferOrders, selectedBoutiqueKey]
   );
 
   const selectedOtLines = useMemo(
-    () => getLinesForSelectedOt(transferOrders, selectedOtKey),
-    [transferOrders, selectedOtKey]
+    () => getLinesForSelectedOt(openTransferOrders, selectedOtKey),
+    [openTransferOrders, selectedOtKey]
   );
 
   const totalFridgeQty = useMemo(
@@ -363,6 +496,88 @@ export default function App() {
           : line
       )
     );
+  }
+
+  function handleShipmentAllocationQtyChange(
+    lineId: string,
+    allocationId: string,
+    value: string
+  ) {
+    const nextQty = Number(value);
+
+    setShipmentDraftLines((prev) =>
+      updateShipmentDraftAllocationQty(prev, lineId, allocationId, nextQty)
+    );
+  }
+
+  function handleShipmentAllocationLotChange(
+    lineId: string,
+    allocationId: string,
+    lot: string
+  ) {
+    setShipmentDraftLines((prev) =>
+      updateShipmentDraftAllocationLot(prev, lineId, allocationId, lot)
+    );
+  }
+
+  function handleSplitLineIntoMultipleLots(lineId: string) {
+    setShipmentDraftLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+
+        return {
+          ...line,
+          suggestionMode: "multi_auto",
+          allocations: line.availableLots.map((lot) => ({
+            id: uid("SHIP_ALLOC"),
+            lot: lot.lot,
+            qty: 0,
+          })),
+          shippedQty: 0,
+        };
+      })
+    );
+  }
+
+  function handleValidateShipment() {
+    if (shipmentDraftLines.length === 0) return;
+
+    const { errors, warnings } = validateShipmentDraft(shipmentDraftLines);
+
+    if (errors.length > 0) {
+      alert("Erreurs bloquantes :\n\n" + errors.join("\n"));
+      return;
+    }
+
+    if (warnings.length > 0) {
+      const confirmed = window.confirm(
+        "Cette expédition comporte des ruptures :\n\n" +
+          warnings.join("\n") +
+          "\n\nVeux-tu confirmer l'expédition malgré ces ruptures ?"
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const shipment = buildShipmentFromDraft(shipmentDraftLines);
+
+    setShipments((prev) => [shipment, ...prev]);
+
+    setFridgeStock((prev) => applyShipmentToStock(prev, shipment));
+
+    setMovements((prev) => [...buildShipmentMovements(shipment), ...prev]);
+
+    setSelectedShipmentOtNumber(null);
+    setSelectedShipmentBoutiqueKey(null);
+    setShipmentDraftLines([]);
+
+    if (shipment.status === "partial") {
+      alert("Expédition validée avec ruptures.");
+    } else {
+      alert("Expédition validée.");
+    }
   }
 
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
@@ -672,6 +887,12 @@ export default function App() {
               Validation décongélation
             </NavButton>
             <NavButton
+              active={screen === "expeditions"}
+              onClick={() => setScreen("expeditions")}
+            >
+              Expéditions
+            </NavButton>
+            <NavButton
               active={screen === "stock"}
               onClick={() => setScreen("stock")}
             >
@@ -712,6 +933,26 @@ export default function App() {
             <p className="mt-1 text-2xl font-semibold">{availableLots}</p>
           </div>
         </section>
+
+        {screen === "expeditions" && (
+          <ExpeditionsScreen
+            viewMode={viewMode}
+            availableShipmentDates={availableShipmentDates}
+            selectedShipmentDate={selectedShipmentDate}
+            onSelectShipmentDate={setSelectedShipmentDate}
+            availableShipmentBoutiques={availableShipmentBoutiques}
+            selectedShipmentBoutiqueKey={selectedShipmentBoutiqueKey}
+            onSelectShipmentBoutique={setSelectedShipmentBoutiqueKey}
+            availableShipmentOtNumbers={availableShipmentOtNumbers}
+            selectedShipmentOtNumber={selectedShipmentOtNumber}
+            onSelectShipmentOt={setSelectedShipmentOtNumber}
+            shipmentDraftLines={shipmentDraftLines}
+            onShipmentAllocationQtyChange={handleShipmentAllocationQtyChange}
+            onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
+            onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
+            onValidateShipment={handleValidateShipment}
+          />
+        )}
 
         {screen === "gamme" && (
           <GammeScreen
