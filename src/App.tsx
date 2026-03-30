@@ -68,6 +68,17 @@ import { getMovementTypeOptions, filterMovements } from "./utils/movements";
 import { readImportRows } from "./services/fileImportService";
 import { mapAssortmentRowsToProducts } from "./services/assortmentImportService";
 import { mapTransferOrderRows } from "./services/transferOrderImportService";
+import { getImportErrorMessage } from "./services/importErrors";
+import {
+  applyValidatedAllocationsToFridgeStock,
+  buildDefrostValidationMovements,
+  markDefrostLineAsValidated,
+  markDefrostLineAsIgnored,
+  applyManualAdjustmentToFridgeStock,
+  buildManualAdjustmentMovement,
+  applyInventoryCountToFridgeStock,
+  buildInventoryMovement,
+} from "./utils/fridgeStockMutations";
 
 declare global {
   interface Window {
@@ -133,19 +144,24 @@ export default function App() {
     lot: "",
   });
 
-  const [manualAdjustment, setManualAdjustment] = useState({
+  const emptyManualAdjustment = {
     sku: "",
     lot: "",
     qty: 0,
     reason: "",
-  });
+  };
 
-  const [inventoryEntry, setInventoryEntry] = useState({
+  const emptyInventoryEntry = {
     sku: "",
     lot: "",
     countedQty: 0,
     reason: "",
-  });
+  };
+
+  const [manualAdjustment, setManualAdjustment] = useState(
+    emptyManualAdjustment
+  );
+  const [inventoryEntry, setInventoryEntry] = useState(emptyInventoryEntry);
 
   useEffect(() => {
     const handleResize = () => setViewMode(getViewMode(window.innerWidth));
@@ -396,28 +412,8 @@ export default function App() {
         `${newProducts.length} produit(s) importé(s) avec cibles journalières.`
       );
     } catch (error) {
-      console.error("Import gamme error", error);
-
-      if (error instanceof Error) {
-        if (error.message === "UNSUPPORTED_FORMAT") {
-          alert(
-            "Format non supporté. Merci d'importer un fichier .csv ou .xlsx"
-          );
-        } else if (error.message === "XLSX_UNAVAILABLE") {
-          alert(
-            "Import XLSX indisponible : la librairie Excel n'est pas chargée dans l'application."
-          );
-        } else if (
-          error.message === "EMPTY_FILE" ||
-          error.message === "FILE_READ_ERROR"
-        ) {
-          alert("Erreur de lecture du fichier.");
-        } else {
-          alert("Impossible de lire ce fichier.");
-        }
-      } else {
-        alert("Impossible de lire ce fichier.");
-      }
+      console.error("Import error", error);
+      alert(getImportErrorMessage(error));
     } finally {
       event.target.value = "";
     }
@@ -481,28 +477,8 @@ export default function App() {
 
       alert(`${importedOrders.length} ligne(s) OT importée(s).`);
     } catch (error) {
-      console.error("OT import error", error);
-
-      if (error instanceof Error) {
-        if (error.message === "UNSUPPORTED_FORMAT") {
-          alert(
-            "Format non supporté. Merci d'importer un fichier .csv ou .xlsx"
-          );
-        } else if (error.message === "XLSX_UNAVAILABLE") {
-          alert(
-            "Import XLSX indisponible : la librairie Excel n'est pas chargée dans l'application."
-          );
-        } else if (
-          error.message === "EMPTY_FILE" ||
-          error.message === "FILE_READ_ERROR"
-        ) {
-          alert("Erreur de lecture du fichier.");
-        } else {
-          alert("Impossible de lire ce fichier.");
-        }
-      } else {
-        alert("Impossible de lire ce fichier.");
-      }
+      console.error("Import error", error);
+      alert(getImportErrorMessage(error));
     } finally {
       event.target.value = "";
     }
@@ -518,54 +494,16 @@ export default function App() {
 
     if (validAllocations.length === 0) return;
 
-    setFridgeStock((prev) => {
-      const next = [...prev];
-
-      validAllocations.forEach((allocation) => {
-        const existingIndex = next.findIndex(
-          (row) => row.sku === line.sku && row.lot === allocation.lot
-        );
-
-        if (existingIndex >= 0) {
-          next[existingIndex] = {
-            ...next[existingIndex],
-            qty: next[existingIndex].qty + allocation.qty,
-            source: "Stock du matin + décongélation",
-          };
-        } else {
-          next.push({
-            id: uid("FS"),
-            sku: line.sku,
-            name: line.name,
-            lot: allocation.lot,
-            qty: allocation.qty,
-            source: "Décongélation validée",
-          });
-        }
-      });
-
-      return next;
-    });
-
     const now = new Date().toISOString();
 
-    const newMovements: MovementRow[] = validAllocations.map((allocation) => ({
-      id: uid("MVT"),
-      type: "ENTREE_FRIGO",
-      sku: line.sku,
-      name: line.name,
-      lot: allocation.lot,
-      qty: allocation.qty,
-      reason: `Validation décongélation ${line.id}`,
-      createdAt: now,
-    }));
-
-    setMovements((prev) => [...newMovements, ...prev]);
-    setDefrostList((prev) =>
-      prev.map((item) =>
-        item.id === lineId ? { ...item, validated: true } : item
-      )
+    setFridgeStock((prev) =>
+      applyValidatedAllocationsToFridgeStock(prev, line)
     );
+
+    const newMovements = buildDefrostValidationMovements(line, now);
+    setMovements((prev) => [...newMovements, ...prev]);
+
+    setDefrostList((prev) => markDefrostLineAsValidated(prev, lineId));
   }
 
   function ignoreLine(lineId: string) {
@@ -586,21 +524,7 @@ export default function App() {
       ...prev,
     ]);
 
-    setDefrostList((prev) =>
-      prev.map((item) =>
-        item.id === lineId
-          ? {
-              ...item,
-              validated: true,
-              transferQty: 0,
-              allocations: item.allocations.map((allocation) => ({
-                ...allocation,
-                qty: 0,
-              })),
-            }
-          : item
-      )
-    );
+    setDefrostList((prev) => markDefrostLineAsIgnored(prev, lineId));
   }
 
   function validateRemaining() {
@@ -645,44 +569,23 @@ export default function App() {
       return;
     }
 
+    const now = new Date().toISOString();
+
     setFridgeStock((prev) =>
-      prev
-        .map((row) => {
-          if (
-            row.sku === manualAdjustment.sku &&
-            row.lot === manualAdjustment.lot
-          ) {
-            return {
-              ...row,
-              qty: row.qty + qty,
-              source: "Ajustement manuel",
-            };
-          }
-          return row;
-        })
-        .filter((row) => row.qty > 0)
+      applyManualAdjustmentToFridgeStock(
+        prev,
+        manualAdjustment.sku,
+        manualAdjustment.lot,
+        qty
+      )
     );
 
     setMovements((prev) => [
-      {
-        id: uid("MVT"),
-        type: "AJUSTEMENT",
-        sku: stockRow.sku,
-        name: stockRow.name,
-        lot: stockRow.lot,
-        qty,
-        reason,
-        createdAt: new Date().toISOString(),
-      },
+      buildManualAdjustmentMovement(stockRow, qty, reason, now),
       ...prev,
     ]);
 
-    setManualAdjustment({
-      sku: "",
-      lot: "",
-      qty: 0,
-      reason: "",
-    });
+    setManualAdjustment({ ...emptyManualAdjustment });
   }
 
   function submitInventoryCount() {
@@ -708,48 +611,23 @@ export default function App() {
       return;
     }
 
-    const diff = countedQty - stockRow.qty;
+    const now = new Date().toISOString();
 
     setFridgeStock((prev) =>
-      prev
-        .map((row) => {
-          if (
-            row.sku === inventoryEntry.sku &&
-            row.lot === inventoryEntry.lot
-          ) {
-            return {
-              ...row,
-              qty: countedQty,
-              source: "Inventaire manuel",
-            };
-          }
-          return row;
-        })
-        .filter((row) => row.qty > 0)
+      applyInventoryCountToFridgeStock(
+        prev,
+        inventoryEntry.sku,
+        inventoryEntry.lot,
+        countedQty
+      )
     );
 
     setMovements((prev) => [
-      {
-        id: uid("MVT"),
-        type: "INVENTAIRE",
-        sku: stockRow.sku,
-        name: stockRow.name,
-        lot: stockRow.lot,
-        qty: diff,
-        reason:
-          reason ||
-          `Inventaire : théorique ${stockRow.qty}, compté ${countedQty}`,
-        createdAt: new Date().toISOString(),
-      },
+      buildInventoryMovement(stockRow, countedQty, reason, now),
       ...prev,
     ]);
 
-    setInventoryEntry({
-      sku: "",
-      lot: "",
-      countedQty: 0,
-      reason: "",
-    });
+    setInventoryEntry({ ...emptyInventoryEntry });
   }
 
   return (
