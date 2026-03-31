@@ -99,6 +99,13 @@ import {
   buildShipmentMovements,
 } from "./utils/shipments";
 
+import {
+  buildOtProgressList,
+  buildOtProgressMap,
+  getOtKey,
+  computeOtLineProgress,
+} from "./utils/otProgress";
+
 declare global {
   interface Window {
     XLSX?: {
@@ -404,6 +411,27 @@ export default function App() {
     () => filterMovements(movements, movementFilters),
     [movements, movementFilters]
   );
+
+  const otProgressList = useMemo(
+    () => buildOtProgressList(transferOrders, shipments),
+    [transferOrders, shipments]
+  );
+
+  const otProgressMap = useMemo(
+    () => buildOtProgressMap(transferOrders, shipments),
+    [transferOrders, shipments]
+  );
+
+  const otLineProgressMap = useMemo(() => {
+    const map = new Map();
+
+    for (const row of transferOrders) {
+      const progress = computeOtLineProgress(row, shipments);
+      map.set(row.id, progress);
+    }
+
+    return map;
+  }, [transferOrders, shipments]);
 
   function updateTarget(productId: string, day: keyof Targets, value: string) {
     const nextValue = Number(value);
@@ -951,6 +979,8 @@ export default function App() {
             onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
             onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
             onValidateShipment={handleValidateShipment}
+            otProgressMap={otProgressMap}
+            otLineProgressMap={otLineProgressMap}
           />
         )}
 
