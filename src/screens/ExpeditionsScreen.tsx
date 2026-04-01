@@ -1,6 +1,9 @@
-import type { ShipmentLineDraft, ViewMode } from "../types";
-import type { OtLineProgress, OtProgress } from "../types";
+import type { Shipment, ShipmentLineDraft, ViewMode } from "../types";
 import OtStatusBadge from "../components/OtStatusBadge";
+import {
+  computeShipmentLineStatus,
+  summarizeShipmentLines,
+} from "../utils/shipments";
 
 type BoutiqueOption = {
   key: string;
@@ -24,6 +27,8 @@ type Props = {
   onSelectShipmentOt: (value: string | null) => void;
 
   shipmentDraftLines: ShipmentLineDraft[];
+  shipments: Shipment[];
+
   onShipmentAllocationQtyChange: (
     lineId: string,
     allocationId: string,
@@ -36,9 +41,6 @@ type Props = {
   ) => void;
   onSplitLineIntoMultipleLots: (lineId: string) => void;
   onValidateShipment: () => void;
-
-  otProgressMap: Map<string, OtProgress>;
-  otLineProgressMap: Map<string, OtLineProgress>;
 };
 
 export default function ExpeditionsScreen({
@@ -52,26 +54,35 @@ export default function ExpeditionsScreen({
   selectedShipmentOtNumber,
   onSelectShipmentOt,
   shipmentDraftLines,
+  shipments,
   onShipmentAllocationQtyChange,
   onShipmentAllocationLotChange,
   onSplitLineIntoMultipleLots,
   onValidateShipment,
-  otProgressMap,
-  otLineProgressMap,
 }: Props) {
   const selectedBoutique =
     availableShipmentBoutiques.find(
       (b) => b.key === selectedShipmentBoutiqueKey
     ) ?? null;
 
-  const selectedOtKey =
-    selectedShipmentBoutiqueKey && selectedShipmentOtNumber
-      ? `${selectedShipmentBoutiqueKey}__${selectedShipmentOtNumber}`
-      : null;
+  const draftSummary = summarizeShipmentLines(
+    shipmentDraftLines.map((line) => ({
+      orderedQty: line.orderedQty,
+      shippedQty: line.shippedQty,
+    }))
+  );
 
-  const selectedOtProgress = selectedOtKey
-    ? otProgressMap.get(selectedOtKey) ?? null
-    : null;
+  const shipmentsByDate = shipments
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt, "fr"))
+    .reduce<Record<string, Shipment[]>>((acc, shipment) => {
+      const day = shipment.createdAt.slice(0, 10);
+      if (!acc[day]) {
+        acc[day] = [];
+      }
+      acc[day].push(shipment);
+      return acc;
+    }, {});
 
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
@@ -129,7 +140,7 @@ export default function ExpeditionsScreen({
         </div>
       </div>
 
-      {selectedShipmentOtNumber && selectedOtProgress ? (
+      {selectedShipmentOtNumber ? (
         <div className="mt-4 rounded-2xl border bg-slate-50 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -141,49 +152,36 @@ export default function ExpeditionsScreen({
               </p>
             </div>
 
-            <OtStatusBadge status={selectedOtProgress.status} />
+            <OtStatusBadge status="in_progress" />
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600">
             <div className="rounded-lg bg-white p-2">
               <p className="text-slate-500">Demandé</p>
-              <p className="font-semibold">{selectedOtProgress.orderedQty}</p>
+              <p className="font-semibold">{draftSummary.orderedQty}</p>
             </div>
             <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Expédié</p>
-              <p className="font-semibold">{selectedOtProgress.shippedQty}</p>
+              <p className="text-slate-500">Préparé</p>
+              <p className="font-semibold">{draftSummary.shippedQty}</p>
             </div>
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Manquant</p>
-              <p className="font-semibold">{selectedOtProgress.missingQty}</p>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600 md:grid-cols-5">
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Lignes totales</p>
-              <p className="font-semibold">{selectedOtProgress.linesTotal}</p>
-            </div>
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Complètes</p>
-              <p className="font-semibold">
-                {selectedOtProgress.linesComplete}
+            <div
+              className={`rounded-lg p-2 ${
+                draftSummary.missingQty > 0 ? "bg-rose-50" : "bg-white"
+              }`}
+            >
+              <p
+                className={`text-slate-500 ${
+                  draftSummary.missingQty > 0 ? "text-rose-600" : ""
+                }`}
+              >
+                Non servi prévisionnel
               </p>
-            </div>
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Partielles</p>
-              <p className="font-semibold">{selectedOtProgress.linesPartial}</p>
-            </div>
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">En rupture</p>
-              <p className="font-semibold">
-                {selectedOtProgress.linesOutOfStock}
-              </p>
-            </div>
-            <div className="rounded-lg bg-white p-2">
-              <p className="text-slate-500">Couverture</p>
-              <p className="font-semibold">
-                {Math.round(selectedOtProgress.coverageRate * 100)}%
+              <p
+                className={`font-semibold ${
+                  draftSummary.missingQty > 0 ? "text-rose-700" : ""
+                }`}
+              >
+                {draftSummary.missingQty}
               </p>
             </div>
           </div>
@@ -200,10 +198,7 @@ export default function ExpeditionsScreen({
         ) : (
           <div className="space-y-3">
             {shipmentDraftLines.map((line) => {
-              const lineProgress = otLineProgressMap.get(line.otLineId) ?? null;
-              const missingQty = lineProgress
-                ? lineProgress.missingQty
-                : Math.max(line.orderedQty - line.shippedQty, 0);
+              const missingQty = Math.max(line.orderedQty - line.shippedQty, 0);
 
               return (
                 <div key={line.id} className="rounded-2xl border p-3">
@@ -213,14 +208,9 @@ export default function ExpeditionsScreen({
                       <p className="text-sm text-slate-500">{line.sku}</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      {lineProgress ? (
-                        <OtStatusBadge status={lineProgress.status} />
-                      ) : null}
-                      <span className="text-xs text-slate-500">
-                        {line.suggestionMode}
-                      </span>
-                    </div>
+                    <span className="text-xs text-slate-500">
+                      {line.suggestionMode}
+                    </span>
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600">
@@ -229,12 +219,28 @@ export default function ExpeditionsScreen({
                       <p className="font-semibold">{line.orderedQty}</p>
                     </div>
                     <div className="rounded-lg bg-slate-50 p-2">
-                      <p className="text-slate-500">Expédié</p>
+                      <p className="text-slate-500">Préparé</p>
                       <p className="font-semibold">{line.shippedQty}</p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-2">
-                      <p className="text-slate-500">Manquant</p>
-                      <p className="font-semibold">{missingQty}</p>
+                    <div
+                      className={`rounded-lg p-2 ${
+                        missingQty > 0 ? "bg-rose-50" : "bg-slate-50"
+                      }`}
+                    >
+                      <p
+                        className={`${
+                          missingQty > 0 ? "text-rose-600" : "text-slate-500"
+                        }`}
+                      >
+                        Non servi
+                      </p>
+                      <p
+                        className={`font-semibold ${
+                          missingQty > 0 ? "text-rose-700" : ""
+                        }`}
+                      >
+                        {missingQty}
+                      </p>
                     </div>
                   </div>
 
@@ -350,6 +356,182 @@ export default function ExpeditionsScreen({
             >
               Valider l’expédition
             </button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-8">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold">Historique des OT expédiés</h3>
+          <span className="text-sm text-slate-500">{shipments.length} OT</span>
+        </div>
+
+        {shipments.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">
+            Aucune expédition validée pour le moment.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {Object.entries(shipmentsByDate).map(([date, dayShipments]) => (
+              <section key={date} className="rounded-2xl border p-3">
+                <p className="font-medium">{date}</p>
+
+                <div className="mt-3 space-y-3">
+                  {dayShipments.map((shipment) => {
+                    const summary = summarizeShipmentLines(shipment.lines);
+
+                    return (
+                      <div
+                        key={shipment.id}
+                        className="rounded-2xl bg-slate-50 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">
+                              OT {shipment.otNumber}
+                            </p>
+                            <p className="text-sm text-slate-500">
+                              {shipment.boutiqueName} ({shipment.boutiqueCode})
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Livraison {shipment.receptionDate}
+                            </p>
+                          </div>
+
+                          <OtStatusBadge status={shipment.status} />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600">
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="text-slate-500">Demandé</p>
+                            <p className="font-semibold">
+                              {summary.orderedQty}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <p className="text-slate-500">Expédié</p>
+                            <p className="font-semibold">
+                              {summary.shippedQty}
+                            </p>
+                          </div>
+                          <div
+                            className={`rounded-lg p-2 ${
+                              summary.missingQty > 0 ? "bg-rose-50" : "bg-white"
+                            }`}
+                          >
+                            <p
+                              className={`${
+                                summary.missingQty > 0
+                                  ? "text-rose-600"
+                                  : "text-slate-500"
+                              }`}
+                            >
+                              Manquant
+                            </p>
+                            <p
+                              className={`font-semibold ${
+                                summary.missingQty > 0 ? "text-rose-700" : ""
+                              }`}
+                            >
+                              {summary.missingQty}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {shipment.lines.map((line) => {
+                            const lineStatus = computeShipmentLineStatus(
+                              line.orderedQty,
+                              line.shippedQty
+                            );
+                            const lineMissingQty = Math.max(
+                              line.orderedQty - line.shippedQty,
+                              0
+                            );
+
+                            return (
+                              <div
+                                key={line.id}
+                                className="rounded-xl bg-white p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium">{line.name}</p>
+                                    <p className="text-sm text-slate-500">
+                                      {line.sku}
+                                    </p>
+                                  </div>
+
+                                  <OtStatusBadge status={lineStatus} />
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600">
+                                  <div className="rounded-lg bg-slate-50 p-2">
+                                    <p className="text-slate-500">Demandé</p>
+                                    <p className="font-semibold">
+                                      {line.orderedQty}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg bg-slate-50 p-2">
+                                    <p className="text-slate-500">Expédié</p>
+                                    <p className="font-semibold">
+                                      {line.shippedQty}
+                                    </p>
+                                  </div>
+                                  <div
+                                    className={`rounded-lg p-2 ${
+                                      lineMissingQty > 0
+                                        ? "bg-rose-50"
+                                        : "bg-slate-50"
+                                    }`}
+                                  >
+                                    <p
+                                      className={`${
+                                        lineMissingQty > 0
+                                          ? "text-rose-600"
+                                          : "text-slate-500"
+                                      }`}
+                                    >
+                                      Manquant
+                                    </p>
+                                    <p
+                                      className={`font-semibold ${
+                                        lineMissingQty > 0
+                                          ? "text-rose-700"
+                                          : ""
+                                      }`}
+                                    >
+                                      {lineMissingQty}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {line.allocations.length > 0 ? (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {line.allocations.map((allocation) => (
+                                      <span
+                                        key={allocation.id}
+                                        className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"
+                                      >
+                                        Lot {allocation.lot} · {allocation.qty}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 text-xs text-slate-500">
+                                    Aucun lot expédié sur cette ligne.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>

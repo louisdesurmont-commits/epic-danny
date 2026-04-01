@@ -97,7 +97,14 @@ export type ShipmentLine = {
   allocations: ShipmentAllocation[];
 };
 
-export type ShipmentStatus = "complete" | "partial";
+export type ShipmentStatus =
+  | "shipped_complete"
+  | "shipped_partial"
+  | "full_shortage";
+
+export type ShipmentDisplayStatus = ShipmentStatus | "in_progress";
+
+export type ShipmentLineStatus = "complete" | "partial" | "full_shortage";
 
 export type Shipment = {
   id: string;
@@ -132,47 +139,3 @@ export type ShipmentLineDraft = {
   suggestionMode: ShipmentSuggestionMode;
   availableLots: FridgeStockRow[];
 };
-
-export type OtLineFulfillmentStatus =
-  | "pending"
-  | "partial"
-  | "complete"
-  | "out_of_stock";
-export type OtFulfillmentStatus =
-  | "pending"
-  | "partial"
-  | "complete"
-  | "out_of_stock";
-
-export type OtLineProgress = {
-  otLineId: string;
-  orderedQty: number;
-  shippedQty: number;
-  missingQty: number;
-  coverageRate: number; // 0 à 1
-  status: OtLineFulfillmentStatus;
-};
-
-export type OtProgress = {
-  otKey: string;
-  otNumber: string;
-  boutiqueCode: string;
-  boutiqueName: string;
-  receptionDate: string;
-  orderedQty: number;
-  shippedQty: number;
-  missingQty: number;
-  coverageRate: number; // 0 à 1
-  status: OtFulfillmentStatus;
-  linesTotal: number;
-  linesComplete: number;
-  linesPartial: number;
-  linesOutOfStock: number;
-  linesPending: number;
-};
-
-export type OtShipmentStatus =
-  | "in_progress"
-  | "shipped_complete"
-  | "shipped_partial"
-  | "full_shortage";

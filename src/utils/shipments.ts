@@ -24,8 +24,47 @@ export function getShipmentKey(
 }
 
 export function computeShipmentStatus(lines: ShipmentLine[]): ShipmentStatus {
-  const hasPartial = lines.some((line) => line.shippedQty < line.orderedQty);
-  return hasPartial ? "partial" : "complete";
+  const totalOrderedQty = lines.reduce((sum, line) => sum + line.orderedQty, 0);
+  const totalShippedQty = lines.reduce((sum, line) => sum + line.shippedQty, 0);
+
+  if (totalShippedQty === 0) {
+    return "full_shortage";
+  }
+
+  if (totalShippedQty >= totalOrderedQty) {
+    return "shipped_complete";
+  }
+
+  return "shipped_partial";
+}
+
+export function computeShipmentLineStatus(
+  orderedQty: number,
+  shippedQty: number
+): "complete" | "partial" | "full_shortage" {
+  if (shippedQty === 0) {
+    return "full_shortage";
+  }
+
+  if (shippedQty >= orderedQty) {
+    return "complete";
+  }
+
+  return "partial";
+}
+
+export function summarizeShipmentLines(
+  lines: Array<{ orderedQty: number; shippedQty: number }>
+) {
+  const orderedQty = lines.reduce((sum, line) => sum + line.orderedQty, 0);
+  const shippedQty = lines.reduce((sum, line) => sum + line.shippedQty, 0);
+  const missingQty = Math.max(orderedQty - shippedQty, 0);
+
+  return {
+    orderedQty,
+    shippedQty,
+    missingQty,
+  };
 }
 
 export function getShippedOtKeys(shipments: Shipment[]): Set<string> {

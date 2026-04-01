@@ -99,13 +99,6 @@ import {
   buildShipmentMovements,
 } from "./utils/shipments";
 
-import {
-  buildOtProgressList,
-  buildOtProgressMap,
-  getOtKey,
-  computeOtLineProgress,
-} from "./utils/otProgress";
-
 declare global {
   interface Window {
     XLSX?: {
@@ -412,27 +405,6 @@ export default function App() {
     [movements, movementFilters]
   );
 
-  const otProgressList = useMemo(
-    () => buildOtProgressList(transferOrders, shipments),
-    [transferOrders, shipments]
-  );
-
-  const otProgressMap = useMemo(
-    () => buildOtProgressMap(transferOrders, shipments),
-    [transferOrders, shipments]
-  );
-
-  const otLineProgressMap = useMemo(() => {
-    const map = new Map();
-
-    for (const row of transferOrders) {
-      const progress = computeOtLineProgress(row, shipments);
-      map.set(row.id, progress);
-    }
-
-    return map;
-  }, [transferOrders, shipments]);
-
   function updateTarget(productId: string, day: keyof Targets, value: string) {
     const nextValue = Number(value);
     setAssortmentProducts((prev) =>
@@ -601,10 +573,12 @@ export default function App() {
     setSelectedShipmentBoutiqueKey(null);
     setShipmentDraftLines([]);
 
-    if (shipment.status === "partial") {
-      alert("Expédition validée avec ruptures.");
+    if (shipment.status === "full_shortage") {
+      alert("Expédition validée : rupture totale.");
+    } else if (shipment.status === "shipped_partial") {
+      alert("Expédition validée avec ruptures partielles.");
     } else {
-      alert("Expédition validée.");
+      alert("Expédition validée : OT complet.");
     }
   }
 
@@ -979,8 +953,7 @@ export default function App() {
             onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
             onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
             onValidateShipment={handleValidateShipment}
-            otProgressMap={otProgressMap}
-            otLineProgressMap={otLineProgressMap}
+            shipments={shipments}
           />
         )}
 
