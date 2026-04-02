@@ -573,12 +573,13 @@ export default function App() {
     setSelectedShipmentBoutiqueKey(null);
     setShipmentDraftLines([]);
 
-    if (shipment.status === "full_shortage") {
-      alert("Expédition validée : rupture totale.");
-    } else if (shipment.status === "shipped_partial") {
-      alert("Expédition validée avec ruptures partielles.");
+    if (
+      shipment.status === "shipped_partial" ||
+      shipment.status === "full_shortage"
+    ) {
+      alert("Expédition validée avec ruptures.");
     } else {
-      alert("Expédition validée : OT complet.");
+      alert("Expédition validée.");
     }
   }
 
@@ -938,23 +939,25 @@ export default function App() {
 
         {screen === "expeditions" && (
           <ExpeditionsScreen
-            viewMode={viewMode}
-            availableShipmentDates={availableShipmentDates}
-            selectedShipmentDate={selectedShipmentDate}
-            onSelectShipmentDate={setSelectedShipmentDate}
-            availableShipmentBoutiques={availableShipmentBoutiques}
-            selectedShipmentBoutiqueKey={selectedShipmentBoutiqueKey}
-            onSelectShipmentBoutique={setSelectedShipmentBoutiqueKey}
-            availableShipmentOtNumbers={availableShipmentOtNumbers}
-            selectedShipmentOtNumber={selectedShipmentOtNumber}
-            onSelectShipmentOt={setSelectedShipmentOtNumber}
-            shipmentDraftLines={shipmentDraftLines}
-            onShipmentAllocationQtyChange={handleShipmentAllocationQtyChange}
-            onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
-            onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
-            onValidateShipment={handleValidateShipment}
-            shipments={shipments}
-          />
+          viewMode={viewMode}
+          availableShipmentDates={availableShipmentDates}
+          selectedShipmentDate={selectedShipmentDate}
+          onSelectShipmentDate={setSelectedShipmentDate}
+          availableShipmentBoutiques={availableShipmentBoutiques}
+          selectedShipmentBoutiqueKey={selectedShipmentBoutiqueKey}
+          onSelectShipmentBoutique={setSelectedShipmentBoutiqueKey}
+          availableShipmentOtNumbers={availableShipmentOtNumbers}
+          selectedShipmentOtNumber={selectedShipmentOtNumber}
+          onSelectShipmentOt={setSelectedShipmentOtNumber}
+          shipmentDraftLines={shipmentDraftLines}
+          shipments={shipments}
+          onShipmentAllocationQtyChange={handleShipmentAllocationQtyChange}
+          onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
+          onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
+          onValidateShipment={handleValidateShipment}
+          otProgressMap={otProgressMap}
+          otLineProgressMap={otLineProgressMap}
+        />
         )}
 
         {screen === "gamme" && (
