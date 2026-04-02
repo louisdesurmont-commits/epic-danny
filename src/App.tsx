@@ -939,25 +939,23 @@ export default function App() {
 
         {screen === "expeditions" && (
           <ExpeditionsScreen
-          viewMode={viewMode}
-          availableShipmentDates={availableShipmentDates}
-          selectedShipmentDate={selectedShipmentDate}
-          onSelectShipmentDate={setSelectedShipmentDate}
-          availableShipmentBoutiques={availableShipmentBoutiques}
-          selectedShipmentBoutiqueKey={selectedShipmentBoutiqueKey}
-          onSelectShipmentBoutique={setSelectedShipmentBoutiqueKey}
-          availableShipmentOtNumbers={availableShipmentOtNumbers}
-          selectedShipmentOtNumber={selectedShipmentOtNumber}
-          onSelectShipmentOt={setSelectedShipmentOtNumber}
-          shipmentDraftLines={shipmentDraftLines}
-          shipments={shipments}
-          onShipmentAllocationQtyChange={handleShipmentAllocationQtyChange}
-          onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
-          onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
-          onValidateShipment={handleValidateShipment}
-          otProgressMap={otProgressMap}
-          otLineProgressMap={otLineProgressMap}
-        />
+            viewMode={viewMode}
+            availableShipmentDates={availableShipmentDates}
+            selectedShipmentDate={selectedShipmentDate}
+            onSelectShipmentDate={setSelectedShipmentDate}
+            availableShipmentBoutiques={availableShipmentBoutiques}
+            selectedShipmentBoutiqueKey={selectedShipmentBoutiqueKey}
+            onSelectShipmentBoutique={setSelectedShipmentBoutiqueKey}
+            availableShipmentOtNumbers={availableShipmentOtNumbers}
+            selectedShipmentOtNumber={selectedShipmentOtNumber}
+            onSelectShipmentOt={setSelectedShipmentOtNumber}
+            shipmentDraftLines={shipmentDraftLines}
+            shipments={shipments}
+            onShipmentAllocationQtyChange={handleShipmentAllocationQtyChange}
+            onShipmentAllocationLotChange={handleShipmentAllocationLotChange}
+            onSplitLineIntoMultipleLots={handleSplitLineIntoMultipleLots}
+            onValidateShipment={handleValidateShipment}
+          />
         )}
 
         {screen === "gamme" && (
