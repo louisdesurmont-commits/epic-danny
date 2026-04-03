@@ -9,6 +9,16 @@ type Props = {
   handleImportFile: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
+const DAY_COLUMNS: Array<keyof Targets> = [
+  "Lun",
+  "Mar",
+  "Mer",
+  "Jeu",
+  "Ven",
+  "Sam",
+  "Dim",
+];
+
 export default function GammeScreen({
   assortmentProducts,
   viewMode,
@@ -16,82 +26,98 @@ export default function GammeScreen({
   removeProduct,
   handleImportFile,
 }: Props) {
+  const isMobile = viewMode === "mobile";
+
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Produits en gamme</h2>
-        <label className="cursor-pointer text-sm">
-          Import Excel
+      <div
+        className={`flex gap-3 ${
+          isMobile ? "flex-col items-start" : "items-center justify-between"
+        }`}
+      >
+        <div>
+          <h2 className="font-semibold">
+            Produits en gamme - Définition des stocks cibles fin de journée
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Modifier directement les cibles journalières dans le tableau.
+          </p>
+        </div>
+
+        <label className="cursor-pointer rounded border px-3 py-2 text-sm">
+          Importer un fichier gamme
           <input
             type="file"
-            accept=".csv,.xlsx"
+            accept=".xlsx,.xls,.csv"
             className="hidden"
             onChange={handleImportFile}
           />
         </label>
       </div>
 
-      <div
-        className={`mt-4 grid gap-3 ${
-          viewMode === "desktop" ? "grid-cols-2" : "grid-cols-1"
-        }`}
-      >
-        {assortmentProducts.map((product) => (
-          <div key={product.id} className="rounded-2xl bg-slate-50 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold leading-tight">{product.name}</p>
-                <p className="text-xs text-slate-500">{product.sku}</p>
-              </div>
-
-              <div className="flex flex-col items-end gap-2">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium ring-1 ring-slate-200">
-                  {product.unitsPerCase} u / colis
-                </span>
-
-                <button
-                  type="button"
-                  className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700"
-                  onClick={() => removeProduct(product.id)}
-                >
-                  Sortir de la gamme
-                </button>
-              </div>
-            </div>
-
-            <div
-              className={`mt-3 grid gap-2 text-xs ${
-                viewMode === "mobile" ? "grid-cols-4" : "grid-cols-7"
-              }`}
-            >
-              {Object.entries(product.targets).map(([day, qty]) => (
-                <div key={day} className="flex flex-col items-center gap-1">
-                  <span className="text-[10px] text-slate-400">{day}</span>
-                  <input
-                    value={qty}
-                    onChange={(e) =>
-                      updateTarget(
-                        product.id,
-                        day as keyof Targets,
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded border bg-white p-1 text-center"
-                    title="Édition directe avec sauvegarde automatique"
-                  />
-                </div>
+      <div className="mt-4 overflow-x-auto">
+        <table className="min-w-full border text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="border p-2 text-left">Article</th>
+              <th className="border p-2 text-left">Description</th>
+              <th className="border p-2 text-right">Uv / colis</th>
+              {DAY_COLUMNS.map((day) => (
+                <th key={day} className="border p-2 text-center">
+                  {day}
+                </th>
               ))}
-            </div>
+              <th className="border p-2 text-center">Action</th>
+            </tr>
+          </thead>
 
-            <p className="mt-2 text-[10px] text-slate-400">
-              Import attendu par colonnes : 0 article | 1 description | 2
-              u/colis | 3 Lun | 4 Mar | 5 Mer | 6 Jeu | 7 Ven | 8 Sam | 9 Dim
-            </p>
-            <p className="mt-1 text-[10px] text-slate-400">
-              Édition directe → sauvegarde automatique
-            </p>
-          </div>
-        ))}
+          <tbody>
+            {assortmentProducts.map((product) => (
+              <tr key={product.id} className="align-top">
+                <td className="border p-2 font-medium">{product.sku}</td>
+                <td className="border p-2">{product.name}</td>
+                <td className="border p-2 text-right">
+                  {product.unitsPerCase}
+                </td>
+
+                {DAY_COLUMNS.map((day) => (
+                  <td key={day} className="border p-2">
+                    <input
+                      type="number"
+                      min="0"
+                      className="w-20 rounded border p-1 text-right"
+                      value={product.targets[day]}
+                      onChange={(e) =>
+                        updateTarget(product.id, day, e.target.value)
+                      }
+                    />
+                  </td>
+                ))}
+
+                <td className="border p-2 text-center">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1 text-xs text-red-600"
+                    onClick={() => removeProduct(product.id)}
+                  >
+                    Supprimer
+                  </button>
+                </td>
+              </tr>
+            ))}
+
+            {assortmentProducts.length === 0 && (
+              <tr>
+                <td
+                  colSpan={11}
+                  className="border p-4 text-center text-slate-500"
+                >
+                  Aucun produit en gamme.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );
