@@ -48,3 +48,55 @@ export function filterMovements(
       return dateB - dateA;
     });
 }
+
+import type { FridgeStockRow } from "../types";
+
+type MovementInputProduct = {
+  sku: string;
+  name: string;
+  lot: string;
+};
+
+// 🔹 AJUSTEMENT
+export function buildManualAdjustmentMovementFromInput(
+  input: MovementInputProduct,
+  qty: number,
+  reason: string,
+  createdAt: string
+): MovementRow {
+  return {
+    id: `MVT-${crypto.randomUUID()}`,
+    type: "AJUSTEMENT",
+    sku: input.sku,
+    name: input.name,
+    lot: input.lot,
+    qty,
+    reason,
+    createdAt,
+  };
+}
+
+// 🔹 INVENTAIRE
+export function buildInventoryMovementFromInput(
+  existingRow: FridgeStockRow | null,
+  input: MovementInputProduct,
+  countedQty: number,
+  reason: string,
+  createdAt: string
+): MovementRow {
+  const theoreticalQty = existingRow?.qty ?? 0;
+  const delta = countedQty - theoreticalQty;
+
+  return {
+    id: `MVT-${crypto.randomUUID()}`,
+    type: "INVENTAIRE",
+    sku: input.sku,
+    name: input.name,
+    lot: input.lot,
+    qty: delta,
+    reason:
+      reason.trim() ||
+      `Inventaire : théorique ${theoreticalQty}, compté ${countedQty}`,
+    createdAt,
+  };
+}

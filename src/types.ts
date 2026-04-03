@@ -139,3 +139,25 @@ export type ShipmentLineDraft = {
   suggestionMode: ShipmentSuggestionMode;
   availableLots: FridgeStockRow[];
 };
+
+export type MovementInputProduct = {
+  sku: string;
+  name: string;
+  lot: string;
+};
+
+export type ManualAdjustment = {
+  sku: string;
+  name: string;
+  lot: string;
+  qty: number;
+  reason: string;
+};
+
+export type InventoryEntry = {
+  sku: string;
+  name: string;
+  lot: string;
+  countedQty: number;
+  reason: string;
+};

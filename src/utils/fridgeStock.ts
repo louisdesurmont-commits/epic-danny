@@ -65,10 +65,9 @@ export function getSelectedInventoryRow(
 export function getInventoryDifference(
   selectedRow: FridgeStockRow | null,
   countedQty: number
-): number | null {
-  if (!selectedRow) return null;
-
+) {
   if (!Number.isFinite(countedQty) || countedQty < 0) return null;
 
-  return countedQty - selectedRow.qty;
+  const theoreticalQty = selectedRow?.qty ?? 0;
+  return countedQty - theoreticalQty;
 }

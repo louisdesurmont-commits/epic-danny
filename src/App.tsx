@@ -19,7 +19,14 @@ import type {
   ShipmentLineDraft,
   Screen,
   ViewMode,
+  ManualAdjustment,
+  InventoryEntry,
 } from "./types";
+
+import {
+  buildManualAdjustmentMovementFromInput,
+  buildInventoryMovementFromInput,
+} from "./utils/movements";
 
 import {
   getTodayTargetKey,
@@ -60,7 +67,6 @@ import {
   getTotalFridgeQty,
   getAvailableLotsCount,
   groupFridgeStockBySku,
-  getStockProducts,
   getAvailableAdjustmentLots,
   getAvailableInventoryLots,
   getSelectedInventoryRow,
@@ -78,10 +84,6 @@ import {
   buildDefrostValidationMovements,
   markDefrostLineAsValidated,
   markDefrostLineAsIgnored,
-  applyManualAdjustmentToFridgeStock,
-  buildManualAdjustmentMovement,
-  applyInventoryCountToFridgeStock,
-  buildInventoryMovement,
 } from "./utils/fridgeStockMutations";
 
 import {
@@ -98,6 +100,11 @@ import {
   applyShipmentToStock,
   buildShipmentMovements,
 } from "./utils/shipments";
+
+import {
+  upsertManualAdjustmentToFridgeStock,
+  upsertInventoryCountToFridgeStock,
+} from "./utils/stockMutations";
 
 declare global {
   interface Window {
@@ -174,6 +181,7 @@ export default function App() {
 
   const emptyManualAdjustment = {
     sku: "",
+    name: "",
     lot: "",
     qty: 0,
     reason: "",
@@ -181,15 +189,18 @@ export default function App() {
 
   const emptyInventoryEntry = {
     sku: "",
+    name: "",
     lot: "",
     countedQty: 0,
     reason: "",
   };
 
-  const [manualAdjustment, setManualAdjustment] = useState(
+  const [manualAdjustment, setManualAdjustment] = useState<ManualAdjustment>(
     emptyManualAdjustment
   );
-  const [inventoryEntry, setInventoryEntry] = useState(emptyInventoryEntry);
+
+  const [inventoryEntry, setInventoryEntry] =
+    useState<InventoryEntry>(emptyInventoryEntry);
 
   const [shipments, setShipments] = useState<Shipment[]>(appData.shipments);
 
@@ -361,11 +372,6 @@ export default function App() {
     [fridgeStock]
   );
 
-  const stockProducts = useMemo(
-    () => getStockProducts(fridgeStock),
-    [fridgeStock]
-  );
-
   const availableAdjustmentLots = useMemo(
     () => getAvailableAdjustmentLots(fridgeStock, manualAdjustment.sku),
     [fridgeStock, manualAdjustment.sku]
@@ -404,6 +410,28 @@ export default function App() {
     () => filterMovements(movements, movementFilters),
     [movements, movementFilters]
   );
+
+  const assortmentBySku = useMemo(
+    () =>
+      new Map(
+        assortmentProducts.map((product) => [
+          product.sku.trim().toUpperCase(),
+          product,
+        ])
+      ),
+    [assortmentProducts]
+  );
+
+  function normalizeSku(value: string) {
+    return value.trim().toUpperCase();
+  }
+
+  function resolveProductName(sku: string, typedName: string) {
+    const normalizedSku = normalizeSku(sku);
+    const product = assortmentBySku.get(normalizedSku);
+    if (product) return product.name;
+    return typedName.trim();
+  }
 
   function updateTarget(productId: string, day: keyof Targets, value: string) {
     const nextValue = Number(value);
@@ -752,16 +780,24 @@ export default function App() {
   }
 
   function submitManualAdjustment() {
+    const sku = normalizeSku(manualAdjustment.sku);
+    const lot = manualAdjustment.lot.trim();
     const qty = Number(manualAdjustment.qty);
     const reason = manualAdjustment.reason.trim();
+    const resolvedName = resolveProductName(sku, manualAdjustment.name);
 
-    if (!manualAdjustment.sku || !manualAdjustment.lot) {
-      alert("Sélectionne un produit et un lot.");
+    if (!sku) {
+      alert("Le numéro d'article est obligatoire.");
+      return;
+    }
+
+    if (!lot) {
+      alert("Le numéro de lot est obligatoire.");
       return;
     }
 
     if (!Number.isFinite(qty) || qty === 0) {
-      alert("La quantité d'ajustement doit être différente de 0.");
+      alert("La quantité doit être différente de 0.");
       return;
     }
 
@@ -770,36 +806,42 @@ export default function App() {
       return;
     }
 
-    const stockRow = fridgeStock.find(
-      (row) =>
-        row.sku === manualAdjustment.sku && row.lot === manualAdjustment.lot
+    const existingRow = fridgeStock.find(
+      (row) => row.sku === sku && row.lot === lot
     );
 
-    if (!stockRow) {
-      alert("Lot introuvable dans le stock frigo.");
+    if (!existingRow && qty < 0) {
+      alert("Impossible de retirer du stock sur un article / lot absent.");
       return;
     }
 
-    const nextQty = stockRow.qty + qty;
-
-    if (nextQty < 0) {
-      alert("Stock insuffisant pour cet ajustement.");
+    if (existingRow && existingRow.qty + qty < 0) {
+      alert("Stock insuffisant.");
       return;
     }
 
     const now = new Date().toISOString();
 
     setFridgeStock((prev) =>
-      applyManualAdjustmentToFridgeStock(
-        prev,
-        manualAdjustment.sku,
-        manualAdjustment.lot,
-        qty
-      )
+      upsertManualAdjustmentToFridgeStock(prev, {
+        sku,
+        name: resolvedName,
+        lot,
+        qty,
+      })
     );
 
     setMovements((prev) => [
-      buildManualAdjustmentMovement(stockRow, qty, reason, now),
+      buildManualAdjustmentMovementFromInput(
+        {
+          sku,
+          name: resolvedName,
+          lot,
+        },
+        qty,
+        reason,
+        now
+      ),
       ...prev,
     ]);
 
@@ -807,41 +849,54 @@ export default function App() {
   }
 
   function submitInventoryCount() {
+    const sku = normalizeSku(inventoryEntry.sku);
+    const lot = inventoryEntry.lot.trim();
     const countedQty = Number(inventoryEntry.countedQty);
     const reason = inventoryEntry.reason.trim();
+    const resolvedName = resolveProductName(sku, inventoryEntry.name);
 
-    if (!inventoryEntry.sku || !inventoryEntry.lot) {
-      alert("Sélectionne un produit et un lot.");
+    if (!sku) {
+      alert("Le numéro d'article est obligatoire.");
+      return;
+    }
+
+    if (!lot) {
+      alert("Le numéro de lot est obligatoire.");
       return;
     }
 
     if (!Number.isFinite(countedQty) || countedQty < 0) {
-      alert("La quantité comptée doit être positive ou nulle.");
+      alert("Quantité invalide.");
       return;
     }
 
     const stockRow = fridgeStock.find(
-      (row) => row.sku === inventoryEntry.sku && row.lot === inventoryEntry.lot
+      (row) => row.sku === sku && row.lot === lot
     );
-
-    if (!stockRow) {
-      alert("Lot introuvable dans le stock frigo.");
-      return;
-    }
 
     const now = new Date().toISOString();
 
     setFridgeStock((prev) =>
-      applyInventoryCountToFridgeStock(
-        prev,
-        inventoryEntry.sku,
-        inventoryEntry.lot,
-        countedQty
-      )
+      upsertInventoryCountToFridgeStock(prev, {
+        sku,
+        name: resolvedName,
+        lot,
+        countedQty,
+      })
     );
 
     setMovements((prev) => [
-      buildInventoryMovement(stockRow, countedQty, reason, now),
+      buildInventoryMovementFromInput(
+        stockRow ?? null,
+        {
+          sku,
+          name: resolvedName,
+          lot,
+        },
+        countedQty,
+        reason,
+        now
+      ),
       ...prev,
     ]);
 
@@ -1012,7 +1067,7 @@ export default function App() {
         {screen === "stock" && (
           <StockScreen
             viewMode={viewMode}
-            stockProducts={stockProducts}
+            assortmentProducts={assortmentProducts}
             manualAdjustment={manualAdjustment}
             setManualAdjustment={setManualAdjustment}
             availableAdjustmentLots={availableAdjustmentLots}
