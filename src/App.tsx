@@ -56,6 +56,8 @@ import { useStockOperations } from "./hooks/useStockOperations";
 import { useMovementFilters } from "./hooks/useMovementFilters";
 import { useShipmentWorkflow } from "./hooks/useShipmentWorkflow";
 
+import { supabase } from "./lib/supabase";
+
 declare global {
   interface Window {
     XLSX?: {
@@ -168,6 +170,45 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    console.log("SUPABASE CLIENT", supabase);
+    console.log("SUPABASE URL", import.meta.env.VITE_SUPABASE_URL);
+  }, []);
+
+  useEffect(() => {
+    const loadCatalogProducts = async () => {
+      const { data, error } = await supabase
+        .from("catalog_products")
+        .select("*")
+        .order("sku", { ascending: true });
+
+      if (error) {
+        console.error("Erreur chargement catalog_products:", error);
+        return;
+      }
+
+      const mappedProducts = (data ?? []).map((row) => ({
+        id: row.id,
+        sku: row.sku,
+        name: row.name,
+        unitsPerCase: row.units_per_case ?? 0,
+        targets: {
+          Lun: row.target_mon ?? 0,
+          Mar: row.target_tue ?? 0,
+          Mer: row.target_wed ?? 0,
+          Jeu: row.target_thu ?? 0,
+          Ven: row.target_fri ?? 0,
+          Sam: row.target_sat ?? 0,
+          Dim: row.target_sun ?? 0,
+        },
+      }));
+
+      setAssortmentProducts(mappedProducts);
+    };
+
+    loadCatalogProducts();
+  }, [setAssortmentProducts]);
+
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
     [defrostList]
@@ -225,8 +266,14 @@ export default function App() {
     return typedName.trim();
   }
 
-  function updateTarget(productId: string, day: keyof Targets, value: string) {
-    const nextValue = Number(value);
+  async function updateTarget(
+    productId: string,
+    day: keyof Targets,
+    value: string
+  ) {
+    const nextValue =
+      Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
+
     setAssortmentProducts((prev) =>
       prev.map((product) =>
         product.id === productId
@@ -234,27 +281,60 @@ export default function App() {
               ...product,
               targets: {
                 ...product.targets,
-                [day]:
-                  Number.isFinite(nextValue) && nextValue >= 0 ? nextValue : 0,
+                [day]: nextValue,
               },
             }
           : product
       )
     );
+
+    const dayToColumnMap: Record<keyof Targets, string> = {
+      Lun: "target_mon",
+      Mar: "target_tue",
+      Mer: "target_wed",
+      Jeu: "target_thu",
+      Ven: "target_fri",
+      Sam: "target_sat",
+      Dim: "target_sun",
+    };
+
+    const columnName = dayToColumnMap[day];
+
+    const { error } = await supabase
+      .from("catalog_products")
+      .update({ [columnName]: nextValue })
+      .eq("id", productId);
+
+    if (error) {
+      console.error("Erreur mise à jour cible produit :", error);
+      alert("La cible a été modifiée localement mais pas enregistrée en base.");
+    }
   }
 
-  function removeProduct(productId: string) {
-    setAssortmentProducts((prev) => {
-      const productToRemove = prev.find((product) => product.id === productId);
+  async function removeProduct(productId: string) {
+    const productToRemove = assortmentProducts.find(
+      (product) => product.id === productId
+    );
 
-      if (productToRemove) {
-        setDefrostList((current) =>
-          current.filter((line) => line.sku !== productToRemove.sku)
-        );
-      }
+    setAssortmentProducts((prev) =>
+      prev.filter((product) => product.id !== productId)
+    );
 
-      return prev.filter((product) => product.id !== productId);
-    });
+    if (productToRemove) {
+      setDefrostList((current) =>
+        current.filter((line) => line.sku !== productToRemove.sku)
+      );
+    }
+
+    const { error } = await supabase
+      .from("catalog_products")
+      .delete()
+      .eq("id", productId);
+
+    if (error) {
+      console.error("Erreur suppression produit :", error);
+      alert("Le produit a été supprimé localement mais pas en base.");
+    }
   }
 
   function updateTransferQty(lineId: string, value: string) {
@@ -341,28 +421,63 @@ export default function App() {
         return;
       }
 
-      setAssortmentProducts((prev) => {
-        const map = new Map(prev.map((product) => [product.sku, product]));
+      const payload = newProducts.map((product) => ({
+        sku: product.sku.trim().toUpperCase(),
+        name: product.name,
+        units_per_case: product.unitsPerCase ?? 0,
+        target_mon: product.targets.Lun ?? 0,
+        target_tue: product.targets.Mar ?? 0,
+        target_wed: product.targets.Mer ?? 0,
+        target_thu: product.targets.Jeu ?? 0,
+        target_fri: product.targets.Ven ?? 0,
+        target_sat: product.targets.Sam ?? 0,
+        target_sun: product.targets.Dim ?? 0,
+        updated_at: new Date().toISOString(),
+      }));
 
-        newProducts.forEach((product) => {
-          if (map.has(product.sku)) {
-            const existing = map.get(product.sku)!;
-            map.set(product.sku, {
-              ...existing,
-              name: product.name,
-              unitsPerCase: product.unitsPerCase,
-              targets: product.targets,
-            });
-          } else {
-            map.set(product.sku, product);
-          }
-        });
+      const { error: upsertError } = await supabase
+        .from("catalog_products")
+        .upsert(payload, { onConflict: "sku" });
 
-        return Array.from(map.values());
-      });
+      if (upsertError) {
+        console.error("Erreur import gamme vers Supabase :", upsertError);
+        alert("Erreur lors de l'enregistrement de la gamme en base.");
+        event.target.value = "";
+        return;
+      }
+
+      const { data: refreshedData, error: refreshError } = await supabase
+        .from("catalog_products")
+        .select("*")
+        .order("sku", { ascending: true });
+
+      if (refreshError) {
+        console.error("Erreur rechargement gamme après import :", refreshError);
+        alert("Import enregistré, mais impossible de recharger la gamme.");
+        event.target.value = "";
+        return;
+      }
+
+      const mappedProducts = (refreshedData ?? []).map((row: any) => ({
+        id: row.id,
+        sku: row.sku,
+        name: row.name,
+        unitsPerCase: row.units_per_case ?? 0,
+        targets: {
+          Lun: row.target_mon ?? 0,
+          Mar: row.target_tue ?? 0,
+          Mer: row.target_wed ?? 0,
+          Jeu: row.target_thu ?? 0,
+          Ven: row.target_fri ?? 0,
+          Sam: row.target_sat ?? 0,
+          Dim: row.target_sun ?? 0,
+        },
+      }));
+
+      setAssortmentProducts(mappedProducts);
 
       alert(
-        `${newProducts.length} produit(s) importé(s) avec cibles journalières.`
+        `${newProducts.length} produit(s) importé(s) / mis à jour dans la base.`
       );
     } catch (error) {
       console.error("Import error", error);
