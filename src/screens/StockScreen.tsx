@@ -1,27 +1,27 @@
-import type { Dispatch, SetStateAction } from "react";
-import type {
-  FridgeStockRow,
-  ViewMode,
-  Product,
-  ManualAdjustment,
-  InventoryEntry,
-} from "../types";
+import type { FridgeStockRow, ViewMode, Product } from "../types";
 import { getGridCols } from "../utils/format";
+
+import type {
+  InventoryEntryForm,
+  ManualAdjustmentForm,
+} from "../types";
 
 type Props = {
   viewMode: ViewMode;
   assortmentProducts: Product[];
-  manualAdjustment: ManualAdjustment;
-  setManualAdjustment: Dispatch<SetStateAction<ManualAdjustment>>;
   availableAdjustmentLots: FridgeStockRow[];
   submitManualAdjustment: () => void;
-  inventoryEntry: InventoryEntry;
-  setInventoryEntry: Dispatch<SetStateAction<InventoryEntry>>;
   availableInventoryLots: FridgeStockRow[];
   selectedInventoryRow: FridgeStockRow | null;
   inventoryDifference: number | null;
   submitInventoryCount: () => void;
   groupedFridgeStock: [string, FridgeStockRow[]][];
+  manualAdjustment: ManualAdjustmentForm;
+  setManualAdjustment: React.Dispatch<
+    React.SetStateAction<ManualAdjustmentForm>
+  >;
+  inventoryEntry: InventoryEntryForm;
+  setInventoryEntry: React.Dispatch<React.SetStateAction<InventoryEntryForm>>;
 };
 
 export default function StockScreen({

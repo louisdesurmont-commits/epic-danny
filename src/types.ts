@@ -140,13 +140,7 @@ export type ShipmentLineDraft = {
   availableLots: FridgeStockRow[];
 };
 
-export type MovementInputProduct = {
-  sku: string;
-  name: string;
-  lot: string;
-};
-
-export type ManualAdjustment = {
+export type ManualAdjustmentForm = {
   sku: string;
   name: string;
   lot: string;
@@ -154,7 +148,7 @@ export type ManualAdjustment = {
   reason: string;
 };
 
-export type InventoryEntry = {
+export type InventoryEntryForm = {
   sku: string;
   name: string;
   lot: string;

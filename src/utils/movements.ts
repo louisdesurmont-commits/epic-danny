@@ -1,21 +1,29 @@
-import type { MovementRow } from "../types";
+import type { FridgeStockRow, MovementRow } from "../types";
 
-export function getMovementTypeOptions(rows: MovementRow[]): string[] {
-  return Array.from(new Set(rows.map((movement) => movement.type))).sort();
-}
+export type MovementFilters = {
+  type: string;
+  sku: string;
+  name: string;
+  lot: string;
+};
+
+export type MovementInputProduct = {
+  sku: string;
+  name: string;
+  lot: string;
+};
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export function getMovementTypeOptions(rows: MovementRow[]): string[] {
+  return Array.from(new Set(rows.map((movement) => movement.type))).sort();
+}
+
 export function filterMovements(
   rows: MovementRow[],
-  filters: {
-    type: string;
-    sku: string;
-    name: string;
-    lot: string;
-  }
+  filters: MovementFilters
 ): MovementRow[] {
   const typeFilter = normalize(filters.type);
   const skuFilter = normalize(filters.sku);
@@ -49,16 +57,7 @@ export function filterMovements(
     });
 }
 
-import type { FridgeStockRow } from "../types";
-
-type MovementInputProduct = {
-  sku: string;
-  name: string;
-  lot: string;
-};
-
-// 🔹 AJUSTEMENT
-export function buildManualAdjustmentMovementFromInput(
+export function buildManualAdjustmentMovement(
   input: MovementInputProduct,
   qty: number,
   reason: string,
@@ -76,8 +75,7 @@ export function buildManualAdjustmentMovementFromInput(
   };
 }
 
-// 🔹 INVENTAIRE
-export function buildInventoryMovementFromInput(
+export function buildInventoryMovement(
   existingRow: FridgeStockRow | null,
   input: MovementInputProduct,
   countedQty: number,

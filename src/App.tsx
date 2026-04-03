@@ -1,6 +1,4 @@
 import {
-  loadInitialAppData,
-  persistAppData,
   resetAppData,
 } from "./services/appDataService";
 
@@ -10,23 +8,10 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 
 import type {
   Targets,
-  Product,
-  DefrostLine,
-  FridgeStockRow,
-  MovementRow,
   TransferOrderLine,
-  Shipment,
   ShipmentLineDraft,
-  Screen,
   ViewMode,
-  ManualAdjustment,
-  InventoryEntry,
 } from "./types";
-
-import {
-  buildManualAdjustmentMovementFromInput,
-  buildInventoryMovementFromInput,
-} from "./utils/movements";
 
 import {
   getTodayTargetKey,
@@ -63,17 +48,7 @@ import {
   buildIncomingOtQtyBySku,
 } from "./utils/transferOrders";
 
-import {
-  getTotalFridgeQty,
-  getAvailableLotsCount,
-  groupFridgeStockBySku,
-  getAvailableAdjustmentLots,
-  getAvailableInventoryLots,
-  getSelectedInventoryRow,
-  getInventoryDifference,
-} from "./utils/fridgeStock";
-
-import { getMovementTypeOptions, filterMovements } from "./utils/movements";
+import { getTotalFridgeQty, getAvailableLotsCount } from "./utils/fridgeStock";
 
 import { readImportRows } from "./services/fileImportService";
 import { mapAssortmentRowsToProducts } from "./services/assortmentImportService";
@@ -101,10 +76,9 @@ import {
   buildShipmentMovements,
 } from "./utils/shipments";
 
-import {
-  upsertManualAdjustmentToFridgeStock,
-  upsertInventoryCountToFridgeStock,
-} from "./utils/stockMutations";
+import { useStockOperations } from "./hooks/useStockOperations";
+import { useMovementFilters } from "./hooks/useMovementFilters";
+import { useAppData } from "./hooks/useAppData";
 
 declare global {
   interface Window {
@@ -127,10 +101,6 @@ declare global {
 }
 
 export default function App() {
-  const [appData] = useState(() => loadInitialAppData());
-
-  const [screen, setScreen] = useState<Screen>(appData.screen);
-
   const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -138,23 +108,22 @@ export default function App() {
     return getViewMode(window.innerWidth);
   });
 
-  const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
-    appData.assortmentProducts
-  );
-
-  const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>(
-    appData.transferOrders
-  );
-
-  const [defrostList, setDefrostList] = useState<DefrostLine[]>(
-    appData.defrostList
-  );
-
-  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(
-    appData.fridgeStock
-  );
-
-  const [movements, setMovements] = useState<MovementRow[]>(appData.movements);
+  const {
+    screen,
+    setScreen,
+    assortmentProducts,
+    setAssortmentProducts,
+    transferOrders,
+    setTransferOrders,
+    shipments,
+    setShipments,
+    defrostList,
+    setDefrostList,
+    fridgeStock,
+    setFridgeStock,
+    movements,
+    setMovements,
+  } = useAppData();
 
   const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
     null
@@ -172,37 +141,30 @@ export default function App() {
 
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
-  const [movementFilters, setMovementFilters] = useState({
-    type: "",
-    sku: "",
-    name: "",
-    lot: "",
+  const {
+    manualAdjustment,
+    setManualAdjustment,
+    inventoryEntry,
+    setInventoryEntry,
+    groupedFridgeStock,
+    availableAdjustmentLots,
+    availableInventoryLots,
+    selectedInventoryRow,
+    inventoryDifference,
+    submitManualAdjustment,
+    submitInventoryCount,
+  } = useStockOperations({
+    fridgeStock,
+    setFridgeStock,
+    setMovements,
   });
 
-  const emptyManualAdjustment = {
-    sku: "",
-    name: "",
-    lot: "",
-    qty: 0,
-    reason: "",
-  };
-
-  const emptyInventoryEntry = {
-    sku: "",
-    name: "",
-    lot: "",
-    countedQty: 0,
-    reason: "",
-  };
-
-  const [manualAdjustment, setManualAdjustment] = useState<ManualAdjustment>(
-    emptyManualAdjustment
-  );
-
-  const [inventoryEntry, setInventoryEntry] =
-    useState<InventoryEntry>(emptyInventoryEntry);
-
-  const [shipments, setShipments] = useState<Shipment[]>(appData.shipments);
+  const {
+    movementFilters,
+    setMovementFilters,
+    movementTypeOptions,
+    filteredMovements,
+  } = useMovementFilters(movements);
 
   const [shipmentDraftLines, setShipmentDraftLines] = useState<
     ShipmentLineDraft[]
@@ -255,26 +217,6 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => {
-    persistAppData({
-      screen,
-      assortmentProducts,
-      transferOrders,
-      shipments,
-      defrostList,
-      fridgeStock,
-      movements,
-    });
-  }, [
-    screen,
-    assortmentProducts,
-    transferOrders,
-    shipments,
-    defrostList,
-    fridgeStock,
-    movements,
-  ]);
 
   useEffect(() => {
     if (availableShipmentDates.length === 1 && !selectedShipmentDate) {
@@ -365,50 +307,6 @@ export default function App() {
   const availableLots = useMemo(
     () => getAvailableLotsCount(fridgeStock),
     [fridgeStock]
-  );
-
-  const groupedFridgeStock = useMemo(
-    () => groupFridgeStockBySku(fridgeStock),
-    [fridgeStock]
-  );
-
-  const availableAdjustmentLots = useMemo(
-    () => getAvailableAdjustmentLots(fridgeStock, manualAdjustment.sku),
-    [fridgeStock, manualAdjustment.sku]
-  );
-
-  const availableInventoryLots = useMemo(
-    () => getAvailableInventoryLots(fridgeStock, inventoryEntry.sku),
-    [fridgeStock, inventoryEntry.sku]
-  );
-
-  const selectedInventoryRow = useMemo(
-    () =>
-      getSelectedInventoryRow(
-        fridgeStock,
-        inventoryEntry.sku,
-        inventoryEntry.lot
-      ),
-    [fridgeStock, inventoryEntry.sku, inventoryEntry.lot]
-  );
-
-  const inventoryDifference = useMemo(
-    () =>
-      getInventoryDifference(
-        selectedInventoryRow,
-        Number(inventoryEntry.countedQty)
-      ),
-    [selectedInventoryRow, inventoryEntry.countedQty]
-  );
-
-  const movementTypeOptions = useMemo(
-    () => getMovementTypeOptions(movements),
-    [movements]
-  );
-
-  const filteredMovements = useMemo(
-    () => filterMovements(movements, movementFilters),
-    [movements, movementFilters]
   );
 
   const assortmentBySku = useMemo(
@@ -777,130 +675,6 @@ export default function App() {
     remainingLines.forEach((line) => {
       validateLine(line.id);
     });
-  }
-
-  function submitManualAdjustment() {
-    const sku = normalizeSku(manualAdjustment.sku);
-    const lot = manualAdjustment.lot.trim();
-    const qty = Number(manualAdjustment.qty);
-    const reason = manualAdjustment.reason.trim();
-    const resolvedName = resolveProductName(sku, manualAdjustment.name);
-
-    if (!sku) {
-      alert("Le numéro d'article est obligatoire.");
-      return;
-    }
-
-    if (!lot) {
-      alert("Le numéro de lot est obligatoire.");
-      return;
-    }
-
-    if (!Number.isFinite(qty) || qty === 0) {
-      alert("La quantité doit être différente de 0.");
-      return;
-    }
-
-    if (!reason) {
-      alert("Merci de saisir un motif.");
-      return;
-    }
-
-    const existingRow = fridgeStock.find(
-      (row) => row.sku === sku && row.lot === lot
-    );
-
-    if (!existingRow && qty < 0) {
-      alert("Impossible de retirer du stock sur un article / lot absent.");
-      return;
-    }
-
-    if (existingRow && existingRow.qty + qty < 0) {
-      alert("Stock insuffisant.");
-      return;
-    }
-
-    const now = new Date().toISOString();
-
-    setFridgeStock((prev) =>
-      upsertManualAdjustmentToFridgeStock(prev, {
-        sku,
-        name: resolvedName,
-        lot,
-        qty,
-      })
-    );
-
-    setMovements((prev) => [
-      buildManualAdjustmentMovementFromInput(
-        {
-          sku,
-          name: resolvedName,
-          lot,
-        },
-        qty,
-        reason,
-        now
-      ),
-      ...prev,
-    ]);
-
-    setManualAdjustment({ ...emptyManualAdjustment });
-  }
-
-  function submitInventoryCount() {
-    const sku = normalizeSku(inventoryEntry.sku);
-    const lot = inventoryEntry.lot.trim();
-    const countedQty = Number(inventoryEntry.countedQty);
-    const reason = inventoryEntry.reason.trim();
-    const resolvedName = resolveProductName(sku, inventoryEntry.name);
-
-    if (!sku) {
-      alert("Le numéro d'article est obligatoire.");
-      return;
-    }
-
-    if (!lot) {
-      alert("Le numéro de lot est obligatoire.");
-      return;
-    }
-
-    if (!Number.isFinite(countedQty) || countedQty < 0) {
-      alert("Quantité invalide.");
-      return;
-    }
-
-    const stockRow = fridgeStock.find(
-      (row) => row.sku === sku && row.lot === lot
-    );
-
-    const now = new Date().toISOString();
-
-    setFridgeStock((prev) =>
-      upsertInventoryCountToFridgeStock(prev, {
-        sku,
-        name: resolvedName,
-        lot,
-        countedQty,
-      })
-    );
-
-    setMovements((prev) => [
-      buildInventoryMovementFromInput(
-        stockRow ?? null,
-        {
-          sku,
-          name: resolvedName,
-          lot,
-        },
-        countedQty,
-        reason,
-        now
-      ),
-      ...prev,
-    ]);
-
-    setInventoryEntry({ ...emptyInventoryEntry });
   }
 
   return (
