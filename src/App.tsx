@@ -662,6 +662,7 @@ export default function App() {
             inventoryDifference={inventoryDifference}
             submitInventoryCount={submitInventoryCount}
             groupedFridgeStock={groupedFridgeStock}
+            fridgeStock={fridgeStock}
           />
         )}
 
