@@ -180,34 +180,6 @@ Exemples :
 - Stockage : **localStorage**
 - Clé : `oai_app_data_v1`
 - Géré par :
-
-gère :
-
-- le state principal
-- le chargement initial
-- la persistance automatique
-
-➡️ `App.tsx` ne gère plus directement le stockage
-
----
-
-### 4. Logique métier isolée
-
-Exemples :
-
-- `useStockOperations` → ajustements + inventaires
-- `useMovementFilters` → filtrage UI
-- `shipments.ts` → logique expédition
-
-➡️ facilite maintenance et évolutions
-
----
-
-## 💾 Persistance des données
-
-- Stockage : **localStorage**
-- Clé : `oai_app_data_v1`
-- Géré par :
   src/services/appDataService.ts
 
 Fonctions principales :

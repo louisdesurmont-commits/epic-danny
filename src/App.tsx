@@ -1,17 +1,10 @@
-import {
-  resetAppData,
-} from "./services/appDataService";
+import { resetAppData } from "./services/appDataService";
 
 import NavButton from "./components/NavButton";
 
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 
-import type {
-  Targets,
-  TransferOrderLine,
-  ShipmentLineDraft,
-  ViewMode,
-} from "./types";
+import type { Targets, ViewMode } from "./types";
 
 import {
   getTodayTargetKey,
@@ -28,17 +21,11 @@ import {
 } from "./utils/defrost";
 
 import MouvementsScreen from "./screens/MouvementsScreen";
-
 import OTScreen from "./screens/OTScreen";
-
 import BesoinsScreen from "./screens/BesoinsScreen";
-
 import GammeScreen from "./screens/GammeScreen";
-
 import ValidationScreen from "./screens/ValidationScreen";
-
 import StockScreen from "./screens/StockScreen";
-
 import ExpeditionsScreen from "./screens/ExpeditionsScreen";
 
 import {
@@ -54,6 +41,7 @@ import { readImportRows } from "./services/fileImportService";
 import { mapAssortmentRowsToProducts } from "./services/assortmentImportService";
 import { mapTransferOrderRows } from "./services/transferOrderImportService";
 import { getImportErrorMessage } from "./services/importErrors";
+
 import {
   applyValidatedAllocationsToFridgeStock,
   buildDefrostValidationMovements,
@@ -61,24 +49,12 @@ import {
   markDefrostLineAsIgnored,
 } from "./utils/fridgeStockMutations";
 
-import {
-  getOpenTransferOrders,
-  getAvailableShipmentDates,
-  getBoutiquesForShipmentDate,
-  getOtNumbersForShipmentSelection,
-  getTransferOrderLinesForShipmentSelection,
-  buildShipmentDraftForOt,
-  updateShipmentDraftAllocationQty,
-  updateShipmentDraftAllocationLot,
-  validateShipmentDraft,
-  buildShipmentFromDraft,
-  applyShipmentToStock,
-  buildShipmentMovements,
-} from "./utils/shipments";
+import { getOpenTransferOrders } from "./utils/shipments";
 
+import { useAppData } from "./hooks/useAppData";
 import { useStockOperations } from "./hooks/useStockOperations";
 import { useMovementFilters } from "./hooks/useMovementFilters";
-import { useAppData } from "./hooks/useAppData";
+import { useShipmentWorkflow } from "./hooks/useShipmentWorkflow";
 
 declare global {
   interface Window {
@@ -101,13 +77,6 @@ declare global {
 }
 
 export default function App() {
-  const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
-
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "mobile";
-    return getViewMode(window.innerWidth);
-  });
-
   const {
     screen,
     setScreen,
@@ -125,20 +94,17 @@ export default function App() {
     setMovements,
   } = useAppData();
 
+  const todayTargetKey = useMemo(() => getTodayTargetKey(), []);
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "mobile";
+    return getViewMode(window.innerWidth);
+  });
+
   const [selectedBoutiqueKey, setSelectedBoutiqueKey] = useState<string | null>(
     null
   );
   const [selectedOtKey, setSelectedOtKey] = useState<string | null>(null);
-
-  const [selectedShipmentDate, setSelectedShipmentDate] = useState<
-    string | null
-  >(null);
-  const [selectedShipmentBoutiqueKey, setSelectedShipmentBoutiqueKey] =
-    useState<string | null>(null);
-  const [selectedShipmentOtNumber, setSelectedShipmentOtNumber] = useState<
-    string | null
-  >(null);
-
   const [recomputeMessage, setRecomputeMessage] = useState<string>("");
 
   const {
@@ -166,49 +132,33 @@ export default function App() {
     filteredMovements,
   } = useMovementFilters(movements);
 
-  const [shipmentDraftLines, setShipmentDraftLines] = useState<
-    ShipmentLineDraft[]
-  >([]);
+  const {
+    selectedShipmentDate,
+    setSelectedShipmentDate,
+    selectedShipmentBoutiqueKey,
+    setSelectedShipmentBoutiqueKey,
+    selectedShipmentOtNumber,
+    setSelectedShipmentOtNumber,
+    shipmentDraftLines,
+    availableShipmentDates,
+    availableShipmentBoutiques,
+    availableShipmentOtNumbers,
+    handleShipmentAllocationQtyChange,
+    handleShipmentAllocationLotChange,
+    handleSplitLineIntoMultipleLots,
+    handleValidateShipment,
+  } = useShipmentWorkflow({
+    transferOrders,
+    shipments,
+    fridgeStock,
+    setShipments,
+    setFridgeStock,
+    setMovements,
+  });
 
   const openTransferOrders = useMemo(
     () => getOpenTransferOrders(transferOrders, shipments),
     [transferOrders, shipments]
-  );
-
-  const availableShipmentDates = useMemo(
-    () => getAvailableShipmentDates(openTransferOrders),
-    [openTransferOrders]
-  );
-
-  const availableShipmentBoutiques = useMemo(
-    () => getBoutiquesForShipmentDate(openTransferOrders, selectedShipmentDate),
-    [openTransferOrders, selectedShipmentDate]
-  );
-
-  const availableShipmentOtNumbers = useMemo(
-    () =>
-      getOtNumbersForShipmentSelection(
-        openTransferOrders,
-        selectedShipmentDate,
-        selectedShipmentBoutiqueKey
-      ),
-    [openTransferOrders, selectedShipmentDate, selectedShipmentBoutiqueKey]
-  );
-
-  const selectedShipmentOtLines = useMemo(
-    () =>
-      getTransferOrderLinesForShipmentSelection(
-        openTransferOrders,
-        selectedShipmentDate,
-        selectedShipmentBoutiqueKey,
-        selectedShipmentOtNumber
-      ),
-    [
-      openTransferOrders,
-      selectedShipmentDate,
-      selectedShipmentBoutiqueKey,
-      selectedShipmentOtNumber,
-    ]
   );
 
   useEffect(() => {
@@ -217,62 +167,6 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => {
-    if (availableShipmentDates.length === 1 && !selectedShipmentDate) {
-      setSelectedShipmentDate(availableShipmentDates[0]);
-    }
-  }, [availableShipmentDates, selectedShipmentDate]);
-
-  useEffect(() => {
-    setSelectedShipmentBoutiqueKey(null);
-    setSelectedShipmentOtNumber(null);
-  }, [selectedShipmentDate]);
-
-  useEffect(() => {
-    if (
-      selectedShipmentDate &&
-      availableShipmentBoutiques.length === 1 &&
-      !selectedShipmentBoutiqueKey
-    ) {
-      setSelectedShipmentBoutiqueKey(availableShipmentBoutiques[0].key);
-    }
-  }, [
-    selectedShipmentDate,
-    availableShipmentBoutiques,
-    selectedShipmentBoutiqueKey,
-  ]);
-
-  useEffect(() => {
-    setSelectedShipmentOtNumber(null);
-  }, [selectedShipmentBoutiqueKey]);
-
-  useEffect(() => {
-    if (
-      selectedShipmentDate &&
-      selectedShipmentBoutiqueKey &&
-      availableShipmentOtNumbers.length === 1 &&
-      !selectedShipmentOtNumber
-    ) {
-      setSelectedShipmentOtNumber(availableShipmentOtNumbers[0]);
-    }
-  }, [
-    selectedShipmentDate,
-    selectedShipmentBoutiqueKey,
-    availableShipmentOtNumbers,
-    selectedShipmentOtNumber,
-  ]);
-
-  useEffect(() => {
-    if (selectedShipmentOtLines.length === 0) {
-      setShipmentDraftLines([]);
-      return;
-    }
-
-    setShipmentDraftLines(
-      buildShipmentDraftForOt(selectedShipmentOtLines, fridgeStock)
-    );
-  }, [selectedShipmentOtLines, fridgeStock]);
 
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
@@ -424,91 +318,6 @@ export default function App() {
     );
   }
 
-  function handleShipmentAllocationQtyChange(
-    lineId: string,
-    allocationId: string,
-    value: string
-  ) {
-    const nextQty = Number(value);
-
-    setShipmentDraftLines((prev) =>
-      updateShipmentDraftAllocationQty(prev, lineId, allocationId, nextQty)
-    );
-  }
-
-  function handleShipmentAllocationLotChange(
-    lineId: string,
-    allocationId: string,
-    lot: string
-  ) {
-    setShipmentDraftLines((prev) =>
-      updateShipmentDraftAllocationLot(prev, lineId, allocationId, lot)
-    );
-  }
-
-  function handleSplitLineIntoMultipleLots(lineId: string) {
-    setShipmentDraftLines((prev) =>
-      prev.map((line) => {
-        if (line.id !== lineId) return line;
-
-        return {
-          ...line,
-          suggestionMode: "multi_auto",
-          allocations: line.availableLots.map((lot) => ({
-            id: uid("SHIP_ALLOC"),
-            lot: lot.lot,
-            qty: 0,
-          })),
-          shippedQty: 0,
-        };
-      })
-    );
-  }
-
-  function handleValidateShipment() {
-    if (shipmentDraftLines.length === 0) return;
-
-    const { errors, warnings } = validateShipmentDraft(shipmentDraftLines);
-
-    if (errors.length > 0) {
-      alert("Erreurs bloquantes :\n\n" + errors.join("\n"));
-      return;
-    }
-
-    if (warnings.length > 0) {
-      const confirmed = window.confirm(
-        "Cette expédition comporte des ruptures :\n\n" +
-          warnings.join("\n") +
-          "\n\nVeux-tu confirmer l'expédition malgré ces ruptures ?"
-      );
-
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    const shipment = buildShipmentFromDraft(shipmentDraftLines);
-
-    setShipments((prev) => [shipment, ...prev]);
-
-    setFridgeStock((prev) => applyShipmentToStock(prev, shipment));
-
-    setMovements((prev) => [...buildShipmentMovements(shipment), ...prev]);
-
-    setSelectedShipmentOtNumber(null);
-    setSelectedShipmentBoutiqueKey(null);
-    setShipmentDraftLines([]);
-
-    if (
-      shipment.status === "shipped_partial" ||
-      shipment.status === "full_shortage"
-    ) {
-      alert("Expédition validée avec ruptures.");
-    } else {
-      alert("Expédition validée.");
-    }
-  }
-
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -568,7 +377,7 @@ export default function App() {
     setSelectedOtKey(null);
   }
 
-  function regenerateDefrostNeeds(importedOrders?: TransferOrderLine[]) {
+  function regenerateDefrostNeeds(importedOrders?: typeof transferOrders) {
     const orders = importedOrders ?? transferOrders;
 
     setDefrostList((prev) =>
