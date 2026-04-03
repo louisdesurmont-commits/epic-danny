@@ -20,6 +20,21 @@ type BoutiqueOption = {
 type ExpeditionTab = "current" | "history";
 type HistoryStatusFilter = "all" | "shipped_partial" | "full_shortage";
 
+type HistorySortKey =
+  | "createdAt"
+  | "otNumber"
+  | "boutiqueCode"
+  | "boutiqueName"
+  | "status"
+  | "orderedQty"
+  | "shippedQty"
+  | "missingQty"
+  | "sku"
+  | "name"
+  | "lots";
+
+type SortDirection = "asc" | "desc";
+
 type Props = {
   viewMode: ViewMode;
   availableShipmentDates: string[];
@@ -106,9 +121,17 @@ export default function ExpeditionsScreen({
     endDate: "",
     boutiqueKey: "",
     sku: "",
+    lot: "",
     status: "all" as HistoryStatusFilter,
   });
 
+  const [historySort, setHistorySort] = useState<{
+    key: HistorySortKey;
+    direction: SortDirection;
+  }>({
+    key: "createdAt",
+    direction: "desc",
+  });
   const selectedBoutique =
     availableShipmentBoutiques.find(
       (b) => b.key === selectedShipmentBoutiqueKey
@@ -184,6 +207,80 @@ export default function ExpeditionsScreen({
     });
   }, [historyRows, historyFilters]);
 
+  const historyLineRows = useMemo(() => {
+    const rows = filteredHistoryRows.flatMap((row) => {
+      const shipment = shipments.find((item) => item.id === row.shipmentId);
+      if (!shipment) return [];
+
+      return shipment.lines
+        .map((line) => {
+          const missingQty = Math.max(line.orderedQty - line.shippedQty, 0);
+
+          const lineStatus = computeShipmentLineStatus(
+            line.orderedQty,
+            line.shippedQty
+          );
+
+          const lots = line.allocations
+            .map((allocation) => `${allocation.lot} (${allocation.qty})`)
+            .join(" | ");
+
+          return {
+            shipmentId: shipment.id,
+            createdAt: shipment.createdAt,
+            otNumber: shipment.otNumber,
+            boutiqueName: shipment.boutiqueName,
+            boutiqueCode: shipment.boutiqueCode,
+            sku: line.sku,
+            name: line.name,
+            status: lineStatus,
+            orderedQty: line.orderedQty,
+            shippedQty: line.shippedQty,
+            missingQty,
+            lots,
+          };
+        })
+        .filter((lineRow) => {
+          if (historyFilters.lot.trim()) {
+            const searchedLot = historyFilters.lot.trim().toLowerCase();
+            return lineRow.lots.toLowerCase().includes(searchedLot);
+          }
+
+          return true;
+        });
+    });
+
+    const sortedRows = [...rows].sort((a, b) => {
+      const { key, direction } = historySort;
+
+      const aValue = a[key];
+      const bValue = b[key];
+
+      let comparison = 0;
+
+      if (
+        key === "orderedQty" ||
+        key === "shippedQty" ||
+        key === "missingQty"
+      ) {
+        comparison = Number(aValue) - Number(bValue);
+      } else {
+        comparison = String(aValue ?? "").localeCompare(
+          String(bValue ?? ""),
+          "fr",
+          {
+            numeric: true,
+            sensitivity: "base",
+          }
+        );
+      }
+
+      return direction === "asc" ? comparison : -comparison;
+    });
+
+    return sortedRows;
+  }, [filteredHistoryRows, shipments, historySort, historyFilters.lot]);
+
   const shipmentsByDate = useMemo(() => {
     return filteredHistoryRows.reduce<Record<string, ShipmentHistoryRow[]>>(
       (acc, shipment) => {
@@ -202,8 +299,92 @@ export default function ExpeditionsScreen({
       ...prev,
       boutiqueKey: "",
       sku: "",
+      lot: "",
       status: "all",
     }));
+  }
+
+  function formatDateTime(value: string) {
+    if (!value) return "";
+    return new Date(value).toLocaleString("fr-FR");
+  }
+
+  function exportHistoryCsv() {
+    const rows = historyLineRows.map((row) => ({
+      date_heure: formatDateTime(row.createdAt),
+      ot: row.otNumber,
+      boutique_code: row.boutiqueCode,
+      boutique_nom: row.boutiqueName,
+      sku: row.sku,
+      produit: row.name,
+      statut: row.status,
+      quantite_demandee: row.orderedQty,
+      quantite_expediee: row.shippedQty,
+      quantite_manquante: row.missingQty,
+      lot: row.lots,
+    }));
+
+    const headers = Object.keys(
+      rows[0] ?? {
+        date_heure: "",
+        date: "",
+        ot: "",
+        boutique_code: "",
+        boutique_nom: "",
+        statut: "",
+        quantite_demandee: "",
+        quantite_expediee: "",
+        quantite_manquante: "",
+        references: "",
+      }
+    );
+
+    const escapeCsv = (value: unknown) => {
+      const text = String(value ?? "");
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const csv = [
+      headers.join(";"),
+      ...rows.map((row) =>
+        headers
+          .map((header) => escapeCsv(row[header as keyof typeof row]))
+          .join(";")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `historique_expeditions_${
+      historyFilters.startDate || "debut"
+    }_${historyFilters.endDate || "fin"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function toggleHistorySort(key: HistorySortKey) {
+    setHistorySort((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key,
+        direction: "asc",
+      };
+    });
+  }
+
+  function getSortIndicator(key: HistorySortKey) {
+    if (historySort.key !== key) return "↕";
+    return historySort.direction === "asc" ? "↑" : "↓";
   }
 
   return (
@@ -561,7 +742,7 @@ export default function ExpeditionsScreen({
               </button>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
               <label className="text-sm">
                 <div className="mb-1 text-slate-600">Date début</div>
                 <input
@@ -630,6 +811,22 @@ export default function ExpeditionsScreen({
               </label>
 
               <label className="text-sm">
+                <div className="mb-1 text-slate-600">Lot</div>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border px-3 py-2"
+                  placeholder="Ex. L240315"
+                  value={historyFilters.lot}
+                  onChange={(e) =>
+                    setHistoryFilters((prev) => ({
+                      ...prev,
+                      lot: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="text-sm">
                 <div className="mb-1 text-slate-600">Ruptures / partiels</div>
                 <select
                   className="w-full rounded-xl border px-3 py-2"
@@ -650,165 +847,198 @@ export default function ExpeditionsScreen({
           </div>
 
           <div className="rounded-3xl bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Résultats</h3>
+                <p className="text-sm text-slate-500">
+                  {filteredHistoryRows.length} OT affichée(s)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="rounded-xl border px-3 py-2 text-sm"
+                onClick={exportHistoryCsv}
+                disabled={filteredHistoryRows.length === 0}
+              >
+                Export CSV
+              </button>
+            </div>
+
             {filteredHistoryRows.length === 0 ? (
               <p className="text-sm text-slate-500">
                 Aucune OT expédiée pour cette période et ces filtres.
               </p>
             ) : (
-              <div className="space-y-4">
-                {Object.entries(shipmentsByDate).map(([date, dayShipments]) => (
-                  <div key={date} className="space-y-3">
-                    <h4 className="text-sm font-semibold text-slate-500">
-                      {date}
-                    </h4>
-
-                    {dayShipments.map((shipmentRow) => {
-                      const shipment = shipments.find(
-                        (item) => item.id === shipmentRow.shipmentId
-                      );
-                      if (!shipment) return null;
-
-                      return (
-                        <div
-                          key={shipment.id}
-                          className="rounded-2xl border border-slate-200 p-4"
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-sm">
+                  <thead>
+                    <tr>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("createdAt")}
+                          className="inline-flex items-center gap-1"
                         >
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-semibold">
-                                  OT {shipment.otNumber}
-                                </p>
-                                <OtStatusBadge status={shipment.status} />
-                              </div>
+                          Date / heure {getSortIndicator("createdAt")}
+                        </button>
+                      </th>
 
-                              <p className="text-sm text-slate-500">
-                                {shipment.boutiqueName} ({shipment.boutiqueCode}
-                                )
-                              </p>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("otNumber")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          OT {getSortIndicator("otNumber")}
+                        </button>
+                      </th>
 
-                              <p className="text-xs text-slate-400">
-                                Livraison {shipment.receptionDate}
-                              </p>
-                            </div>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("boutiqueCode")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Code boutique {getSortIndicator("boutiqueCode")}
+                        </button>
+                      </th>
 
-                            <div className="grid grid-cols-3 gap-3 text-sm">
-                              <div>
-                                <p className="text-slate-500">Demandé</p>
-                                <p className="font-semibold">
-                                  {shipmentRow.orderedQty}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-slate-500">Expédié</p>
-                                <p className="font-semibold">
-                                  {shipmentRow.shippedQty}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-slate-500">Manquant</p>
-                                <p
-                                  className={`font-semibold ${
-                                    shipmentRow.missingQty > 0
-                                      ? "text-red-600"
-                                      : ""
-                                  }`}
-                                >
-                                  {shipmentRow.missingQty}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("boutiqueName")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Nom boutique {getSortIndicator("boutiqueName")}
+                        </button>
+                      </th>
 
-                          <div className="mt-4 space-y-3">
-                            {shipment.lines.map((line) => {
-                              const lineStatus = computeShipmentLineStatus(
-                                line.orderedQty,
-                                line.shippedQty
-                              );
-                              const lineMissingQty = Math.max(
-                                line.orderedQty - line.shippedQty,
-                                0
-                              );
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("sku")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Référence {getSortIndicator("sku")}
+                        </button>
+                      </th>
 
-                              return (
-                                <div
-                                  key={line.id}
-                                  className="rounded-2xl bg-slate-50 p-3"
-                                >
-                                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <p className="font-semibold">
-                                          {line.name}
-                                        </p>
-                                        <OtStatusBadge status={lineStatus} />
-                                      </div>
-                                      <p className="text-sm text-slate-500">
-                                        {line.sku}
-                                      </p>
-                                    </div>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("name")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Produit {getSortIndicator("name")}
+                        </button>
+                      </th>
 
-                                    <div className="grid grid-cols-3 gap-3 text-sm">
-                                      <div>
-                                        <p className="text-slate-500">
-                                          Demandé
-                                        </p>
-                                        <p className="font-semibold">
-                                          {line.orderedQty}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500">
-                                          Expédié
-                                        </p>
-                                        <p className="font-semibold">
-                                          {line.shippedQty}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500">
-                                          Manquant
-                                        </p>
-                                        <p
-                                          className={`font-semibold ${
-                                            lineMissingQty > 0
-                                              ? "text-red-600"
-                                              : ""
-                                          }`}
-                                        >
-                                          {lineMissingQty}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("status")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Statut {getSortIndicator("status")}
+                        </button>
+                      </th>
 
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {line.allocations.length > 0 ? (
-                                      line.allocations.map((allocation) => (
-                                        <span
-                                          key={allocation.id}
-                                          className="rounded-full bg-white px-3 py-1 text-xs text-slate-700"
-                                        >
-                                          Lot {allocation.lot} ·{" "}
-                                          {allocation.qty}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-xs text-slate-500">
-                                        Aucun lot expédié sur cette ligne.
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                      <th className="border-b bg-slate-50 px-3 py-2 text-right font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("orderedQty")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Demandé {getSortIndicator("orderedQty")}
+                        </button>
+                      </th>
+
+                      <th className="border-b bg-slate-50 px-3 py-2 text-right font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("shippedQty")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Expédié {getSortIndicator("shippedQty")}
+                        </button>
+                      </th>
+
+                      <th className="border-b bg-slate-50 px-3 py-2 text-right font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("missingQty")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Manquant {getSortIndicator("missingQty")}
+                        </button>
+                      </th>
+
+                      <th className="border-b bg-slate-50 px-3 py-2 text-left font-medium">
+                        <button
+                          type="button"
+                          onClick={() => toggleHistorySort("lots")}
+                          className="inline-flex items-center gap-1"
+                        >
+                          Lots {getSortIndicator("lots")}
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {historyLineRows.map((row, index) => (
+                      <tr
+                        key={index}
+                        className="odd:bg-white even:bg-slate-50/50"
+                      >
+                        <td className="border-b px-3 py-2">
+                          {formatDateTime(row.createdAt)}
+                        </td>
+
+                        <td className="border-b px-3 py-2 font-medium">
+                          {row.otNumber}
+                        </td>
+
+                        <td className="border-b px-3 py-2 font-mono text-xs">
+                          {row.boutiqueCode}
+                        </td>
+
+                        <td className="border-b px-3 py-2">
+                          {row.boutiqueName}
+                        </td>
+
+                        <td className="border-b px-3 py-2">{row.sku}</td>
+
+                        <td className="border-b px-3 py-2">{row.name}</td>
+
+                        <td className="border-b px-3 py-2">
+                          <OtStatusBadge status={row.status} />
+                        </td>
+
+                        <td className="border-b px-3 py-2 text-right">
+                          {row.orderedQty}
+                        </td>
+
+                        <td className="border-b px-3 py-2 text-right">
+                          {row.shippedQty}
+                        </td>
+
+                        <td
+                          className={`border-b px-3 py-2 text-right font-medium ${
+                            row.missingQty > 0 ? "text-red-600" : ""
+                          }`}
+                        >
+                          {row.missingQty}
+                        </td>
+
+                        <td className="border-b px-3 py-2">
+                          {row.lots || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
