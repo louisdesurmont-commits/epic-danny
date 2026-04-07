@@ -64,6 +64,7 @@ import {
   upsertStockLot,
   insertStockMovement,
   reloadStockAndMovements,
+  getStockLotBySkuLot,
 } from "./services/supabaseStockService";
 
 declare global {
@@ -367,7 +368,7 @@ export default function App() {
   async function handleManualAdjustmentSupabase() {
     const sku = manualAdjustment.sku.trim().toUpperCase();
     const lot = manualAdjustment.lot.trim();
-    const qty = manualAdjustment.qty;
+    const adjustmentQty = manualAdjustment.qty;
     const typedName = manualAdjustment.name.trim();
     const comment = manualAdjustment.reason.trim();
 
@@ -381,8 +382,18 @@ export default function App() {
       return;
     }
 
-    if (!Number.isFinite(qty) || qty < 0) {
-      alert("La quantité doit être un nombre ≥ 0.");
+    if (!Number.isFinite(adjustmentQty)) {
+      alert("La quantité d'ajustement doit être un nombre.");
+      return;
+    }
+
+    if (adjustmentQty === 0) {
+      alert("La quantité d'ajustement doit être différente de 0.");
+      return;
+    }
+
+    if (!comment) {
+      alert("Le commentaire est obligatoire pour un ajustement.");
       return;
     }
 
@@ -390,11 +401,23 @@ export default function App() {
       assortmentBySku.get(sku)?.name || typedName || "Article sans description";
 
     try {
+      const existingLot = await getStockLotBySkuLot({ sku, lot });
+      const currentQty = existingLot?.quantity ?? 0;
+      const nextQty = currentQty + adjustmentQty;
+
+      if (nextQty < 0) {
+        alert(
+          `Ajustement impossible : stock actuel ${currentQty}, ajustement ${adjustmentQty}. Le stock ne peut pas devenir négatif.`
+        );
+        return;
+      }
+
       await upsertStockLot({
         sku,
         productName: resolvedName,
         lot,
-        quantity: qty,
+        quantity: nextQty,
+        dlc: existingLot?.dlc ?? undefined,
       });
 
       await insertStockMovement({
@@ -402,8 +425,8 @@ export default function App() {
         sku,
         productName: resolvedName,
         lot,
-        quantity: qty,
-        comment: comment || "Ajustement manuel",
+        quantity: adjustmentQty,
+        comment,
       });
 
       const { stockRows, movementRows } = await reloadStockAndMovements();
