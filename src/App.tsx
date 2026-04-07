@@ -1,7 +1,5 @@
-import { resetAppData } from "./services/appDataService";
-
+import { clearAppData } from "./services/storage";
 import NavButton from "./components/NavButton";
-
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 
 import type { Targets, ViewMode } from "./types";
@@ -42,13 +40,6 @@ import { mapAssortmentRowsToProducts } from "./services/assortmentImportService"
 import { mapTransferOrderRows } from "./services/transferOrderImportService";
 import { getImportErrorMessage } from "./services/importErrors";
 
-import {
-  applyValidatedAllocationsToFridgeStock,
-  buildDefrostValidationMovements,
-  markDefrostLineAsValidated,
-  markDefrostLineAsIgnored,
-} from "./utils/fridgeStockMutations";
-
 import { getOpenTransferOrders } from "./utils/shipments";
 
 import { useAppData } from "./hooks/useAppData";
@@ -71,6 +62,11 @@ import {
   loadTransferOrdersFromSupabase,
   replaceTransferOrdersInSupabase,
 } from "./services/supabaseTransferOrdersService";
+
+import {
+  loadDefrostStateFromSupabase,
+  saveDefrostStateToSupabase,
+} from "./services/supabaseDefrostService";
 
 declare global {
   interface Window {
@@ -133,8 +129,6 @@ export default function App() {
     availableInventoryLots,
     selectedInventoryRow,
     inventoryDifference,
-    submitManualAdjustment,
-    submitInventoryCount,
   } = useStockOperations({
     fridgeStock,
     setFridgeStock,
@@ -255,6 +249,19 @@ export default function App() {
     loadTransferOrdersData();
   }, [setTransferOrders]);
 
+  useEffect(() => {
+    const loadDefrostData = async () => {
+      try {
+        const lines = await loadDefrostStateFromSupabase();
+        setDefrostList(lines);
+      } catch (error) {
+        console.error("Erreur chargement décongélation :", error);
+      }
+    };
+
+    loadDefrostData();
+  }, [setDefrostList]);
+
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
     [defrostList]
@@ -300,6 +307,11 @@ export default function App() {
       ),
     [assortmentProducts]
   );
+
+  async function persistDefrostList(nextList: typeof defrostList) {
+    await saveDefrostStateToSupabase(nextList);
+    setDefrostList(nextList);
+  }
 
   async function updateTarget(
     productId: string,
@@ -351,14 +363,21 @@ export default function App() {
       (product) => product.id === productId
     );
 
-    setAssortmentProducts((prev) =>
-      prev.filter((product) => product.id !== productId)
+    const nextProducts = assortmentProducts.filter(
+      (product) => product.id !== productId
     );
 
+    setAssortmentProducts(nextProducts);
+
     if (productToRemove) {
-      setDefrostList((current) =>
-        current.filter((line) => line.sku !== productToRemove.sku)
+      const nextDefrostList = defrostList.filter(
+        (line) => line.sku !== productToRemove.sku
       );
+      void saveDefrostStateToSupabase(nextDefrostList).catch((error) => {
+        console.error(error);
+        alert("Impossible de mettre à jour la décongélation en base.");
+      });
+      setDefrostList(nextDefrostList);
     }
 
     const { error } = await supabase
@@ -521,17 +540,23 @@ export default function App() {
 
   function updateTransferQty(lineId: string, value: string) {
     const nextValue = Number(value);
-    setDefrostList((prev) =>
-      prev.map((line) =>
-        line.id === lineId
-          ? {
-              ...line,
-              transferQty:
-                Number.isFinite(nextValue) && nextValue >= 0 ? nextValue : 0,
-            }
-          : line
-      )
+
+    const nextList = defrostList.map((line) =>
+      line.id === lineId
+        ? {
+            ...line,
+            transferQty:
+              Number.isFinite(nextValue) && nextValue >= 0 ? nextValue : 0,
+          }
+        : line
     );
+
+    setDefrostList(nextList);
+
+    void saveDefrostStateToSupabase(nextList).catch((error) => {
+      console.error(error);
+      alert("Impossible d'enregistrer la modification de la décongélation.");
+    });
   }
 
   function updateAllocation(
@@ -540,44 +565,57 @@ export default function App() {
     field: "lot" | "qty",
     value: string
   ) {
-    setDefrostList((prev) =>
-      prev.map((line) => {
-        if (line.id !== lineId) return line;
-        return {
-          ...line,
-          allocations: line.allocations.map((allocation) => {
-            if (allocation.id !== allocationId) return allocation;
-            if (field === "qty") {
-              const nextQty = Number(value);
-              return {
-                ...allocation,
-                qty: Number.isFinite(nextQty) && nextQty >= 0 ? nextQty : 0,
-              };
-            }
+    const nextList = defrostList.map((line) => {
+      if (line.id !== lineId) return line;
+
+      return {
+        ...line,
+        allocations: line.allocations.map((allocation) => {
+          if (allocation.id !== allocationId) return allocation;
+
+          if (field === "qty") {
+            const nextQty = Number(value);
             return {
               ...allocation,
-              lot: value,
+              qty: Number.isFinite(nextQty) && nextQty >= 0 ? nextQty : 0,
             };
-          }),
-        };
-      })
-    );
+          }
+
+          return {
+            ...allocation,
+            lot: value,
+          };
+        }),
+      };
+    });
+
+    setDefrostList(nextList);
+
+    void saveDefrostStateToSupabase(nextList).catch((error) => {
+      console.error(error);
+      alert("Impossible d'enregistrer la modification de la décongélation.");
+    });
   }
 
   function addAllocation(lineId: string) {
-    setDefrostList((prev) =>
-      prev.map((line) =>
-        line.id === lineId
-          ? {
-              ...line,
-              allocations: [
-                ...line.allocations,
-                { id: uid("ALLOC"), lot: "", qty: 0 },
-              ],
-            }
-          : line
-      )
+    const nextList = defrostList.map((line) =>
+      line.id === lineId
+        ? {
+            ...line,
+            allocations: [
+              ...line.allocations,
+              { id: uid("ALLOC"), lot: "", qty: 0 },
+            ],
+          }
+        : line
     );
+
+    setDefrostList(nextList);
+
+    void saveDefrostStateToSupabase(nextList).catch((error) => {
+      console.error(error);
+      alert("Impossible d'enregistrer la modification de la décongélation.");
+    });
   }
 
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
@@ -679,14 +717,14 @@ export default function App() {
   ) {
     const orders = importedOrders ?? transferOrders;
 
-    setDefrostList((prev) =>
-      regenerateDefrostNeedsData({
-        orders,
-        assortmentProducts,
-        fridgeStock,
-        previousDefrostList: prev,
-      })
-    );
+    const nextList = regenerateDefrostNeedsData({
+      orders,
+      assortmentProducts,
+      fridgeStock,
+      previousDefrostList: defrostList,
+    });
+
+    await persistDefrostList(nextList);
   }
 
   async function recomputeDefrostNeeds() {
@@ -749,7 +787,7 @@ export default function App() {
     }
   }
 
-  function validateLine(lineId: string) {
+  async function validateLine(lineId: string) {
     const line = defrostList.find((item) => item.id === lineId);
     if (!line || line.validated) return;
 
@@ -759,43 +797,86 @@ export default function App() {
 
     if (validAllocations.length === 0) return;
 
-    const now = new Date().toISOString();
+    try {
+      for (const allocation of validAllocations) {
+        const existingLot = await getStockLotBySkuLot({
+          sku: line.sku,
+          lot: allocation.lot,
+        });
 
-    setFridgeStock((prev) =>
-      applyValidatedAllocationsToFridgeStock(prev, line)
-    );
+        const currentQty = existingLot?.quantity ?? 0;
 
-    const newMovements = buildDefrostValidationMovements(line, now);
-    setMovements((prev) => [...newMovements, ...prev]);
+        await upsertStockLot({
+          sku: line.sku,
+          productName: line.name,
+          lot: allocation.lot,
+          quantity: currentQty + allocation.qty,
+          dlc: existingLot?.dlc ?? undefined,
+        });
 
-    setDefrostList((prev) => markDefrostLineAsValidated(prev, lineId));
+        await insertStockMovement({
+          type: "reception",
+          sku: line.sku,
+          productName: line.name,
+          lot: allocation.lot,
+          quantity: allocation.qty,
+          comment: `Validation décongélation ${line.id}`,
+        });
+      }
+
+      const nextList = defrostList.map((item) =>
+        item.id === lineId ? { ...item, validated: true, ignored: false } : item
+      );
+
+      await saveDefrostStateToSupabase(nextList);
+
+      const { stockRows, movementRows } = await reloadStockAndMovements();
+
+      if (stockRows) setFridgeStock(stockRows);
+      if (movementRows) setMovements(movementRows);
+
+      setDefrostList(nextList);
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de la validation de la décongélation.");
+    }
   }
 
-  function ignoreLine(lineId: string) {
+  async function ignoreLine(lineId: string) {
     const line = defrostList.find((item) => item.id === lineId);
     if (!line || line.validated) return;
 
-    setMovements((prev) => [
-      {
-        id: uid("MVT"),
-        type: "AJUSTEMENT",
+    try {
+      await insertStockMovement({
+        type: "adjustment",
         sku: line.sku,
-        name: line.name,
+        productName: line.name,
         lot: "-",
-        qty: 0,
-        reason: `Besoin ignoré ${line.id}`,
-        createdAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+        quantity: 0,
+        comment: `Besoin ignoré ${line.id}`,
+      });
 
-    setDefrostList((prev) => markDefrostLineAsIgnored(prev, lineId));
+      const nextList = defrostList.map((item) =>
+        item.id === lineId ? { ...item, ignored: true, validated: false } : item
+      );
+
+      await saveDefrostStateToSupabase(nextList);
+
+      const { movementRows } = await reloadStockAndMovements();
+
+      if (movementRows) setMovements(movementRows);
+
+      setDefrostList(nextList);
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de l'ignorance du besoin.");
+    }
   }
 
-  function validateRemaining() {
-    remainingLines.forEach((line) => {
-      validateLine(line.id);
-    });
+  async function validateRemaining() {
+    for (const line of remainingLines) {
+      await validateLine(line.id);
+    }
   }
 
   return (
@@ -867,7 +948,7 @@ export default function App() {
               type="button"
               className="rounded border px-3 py-1"
               onClick={() => {
-                resetAppData();
+                clearAppData();
                 window.location.reload();
               }}
             >

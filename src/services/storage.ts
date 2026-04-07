@@ -1,11 +1,8 @@
-import type { Shipment, DefrostLine, Screen } from "../types";
-
-import { defrostListInitial } from "../constants";
+import type { Shipment, Screen } from "../types";
 
 export type AppData = {
   screen: Screen;
   shipments: Shipment[];
-  defrostList: DefrostLine[];
 };
 
 const STORAGE_KEY = "oai_app_data_v1";
@@ -14,7 +11,6 @@ export function getDefaultAppData(): AppData {
   return {
     screen: "gamme",
     shipments: [],
-    defrostList: defrostListInitial,
   };
 }
 
@@ -35,7 +31,6 @@ export function loadAppData(): AppData {
     return {
       screen: parsed.screen ?? "gamme",
       shipments: parsed.shipments ?? [],
-      defrostList: parsed.defrostList ?? defrostListInitial,
     };
   } catch (error) {
     console.error("Erreur loadAppData", error);
