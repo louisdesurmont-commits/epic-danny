@@ -58,6 +58,14 @@ import { useShipmentWorkflow } from "./hooks/useShipmentWorkflow";
 
 import { supabase } from "./lib/supabase";
 
+import {
+  loadStockLotsFromSupabase,
+  loadStockMovementsFromSupabase,
+  upsertStockLot,
+  insertStockMovement,
+  reloadStockAndMovements,
+} from "./services/supabaseStockService";
+
 declare global {
   interface Window {
     XLSX?: {
@@ -76,65 +84,6 @@ declare global {
       };
     };
   }
-}
-
-async function loadStockLotsFromSupabase() {
-  const { data, error } = await supabase
-    .from("stock_lots")
-    .select("*")
-    .order("sku", { ascending: true })
-    .order("lot", { ascending: true });
-
-  if (error) {
-    console.error("Erreur chargement stock_lots :", error);
-    return null;
-  }
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    sku: row.sku,
-    name: row.product_name,
-    lot: row.lot,
-    qty: row.quantity ?? 0,
-    dlc: row.dlc ?? "",
-    source: "frigo",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
-}
-
-async function loadStockMovementsFromSupabase() {
-  const { data, error } = await supabase
-    .from("stock_movements")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Erreur chargement stock_movements :", error);
-    return null;
-  }
-
-  const movementTypeMap: Record<
-    string,
-    "AJUSTEMENT" | "INVENTAIRE" | "ENTREE_FRIGO" | "SORTIE_OT" | "EXPEDITION"
-  > = {
-    reception: "ENTREE_FRIGO",
-    adjustment: "AJUSTEMENT",
-    inventory_entry: "INVENTAIRE",
-    defrost: "SORTIE_OT",
-    shipment: "EXPEDITION",
-  };
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    type: movementTypeMap[row.movement_type] ?? "AJUSTEMENT",
-    sku: row.sku,
-    name: row.product_name,
-    lot: row.lot,
-    qty: row.quantity ?? 0,
-    reason: row.comment ?? "",
-    createdAt: row.created_at,
-  }));
 }
 
 export default function App() {
@@ -412,6 +361,131 @@ export default function App() {
     if (error) {
       console.error("Erreur suppression produit :", error);
       alert("Le produit a été supprimé localement mais pas en base.");
+    }
+  }
+
+  async function handleManualAdjustmentSupabase() {
+    const sku = manualAdjustment.sku.trim().toUpperCase();
+    const lot = manualAdjustment.lot.trim();
+    const qty = manualAdjustment.qty;
+    const typedName = manualAdjustment.name.trim();
+    const comment = manualAdjustment.reason.trim();
+
+    if (!sku) {
+      alert("Le numéro d'article est obligatoire.");
+      return;
+    }
+
+    if (!lot) {
+      alert("Le numéro de lot est obligatoire.");
+      return;
+    }
+
+    if (!Number.isFinite(qty) || qty < 0) {
+      alert("La quantité doit être un nombre ≥ 0.");
+      return;
+    }
+
+    const resolvedName =
+      assortmentBySku.get(sku)?.name || typedName || "Article sans description";
+
+    try {
+      await upsertStockLot({
+        sku,
+        productName: resolvedName,
+        lot,
+        quantity: qty,
+      });
+
+      await insertStockMovement({
+        type: "adjustment",
+        sku,
+        productName: resolvedName,
+        lot,
+        quantity: qty,
+        comment: comment || "Ajustement manuel",
+      });
+
+      const { stockRows, movementRows } = await reloadStockAndMovements();
+
+      if (stockRows) setFridgeStock(stockRows);
+      if (movementRows) setMovements(movementRows);
+
+      setManualAdjustment({
+        sku: "",
+        name: "",
+        lot: "",
+        qty: 0,
+        reason: "",
+      });
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de l'ajustement de stock.");
+    }
+  }
+
+  async function handleInventoryEntrySupabase() {
+    const sku = inventoryEntry.sku.trim().toUpperCase();
+    const lot = inventoryEntry.lot.trim();
+    const countedQty = inventoryEntry.countedQty;
+    const comment = inventoryEntry.reason.trim();
+    const typedName = inventoryEntry.name.trim();
+
+    if (!sku) {
+      alert("Le numéro d'article est obligatoire.");
+      return;
+    }
+
+    if (!lot) {
+      alert("Le numéro de lot est obligatoire.");
+      return;
+    }
+
+    if (!Number.isFinite(countedQty) || countedQty < 0) {
+      alert("La quantité comptée doit être ≥ 0.");
+      return;
+    }
+
+    const theoreticalQty = selectedInventoryRow?.qty ?? 0;
+    const delta = countedQty - theoreticalQty;
+
+    const resolvedName =
+      assortmentBySku.get(sku)?.name || typedName || "Article sans description";
+
+    try {
+      await upsertStockLot({
+        sku,
+        productName: resolvedName,
+        lot,
+        quantity: countedQty,
+      });
+
+      await insertStockMovement({
+        type: "inventory_entry",
+        sku,
+        productName: resolvedName,
+        lot,
+        quantity: delta,
+        comment:
+          comment ||
+          `Inventaire : théorique ${theoreticalQty}, compté ${countedQty}`,
+      });
+
+      const { stockRows, movementRows } = await reloadStockAndMovements();
+
+      if (stockRows) setFridgeStock(stockRows);
+      if (movementRows) setMovements(movementRows);
+
+      setInventoryEntry({
+        sku: "",
+        name: "",
+        lot: "",
+        countedQty: 0,
+        reason: "",
+      });
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de l'inventaire.");
     }
   }
 
@@ -847,13 +921,13 @@ export default function App() {
             manualAdjustment={manualAdjustment}
             setManualAdjustment={setManualAdjustment}
             availableAdjustmentLots={availableAdjustmentLots}
-            submitManualAdjustment={submitManualAdjustment}
+            submitManualAdjustment={handleManualAdjustmentSupabase}
             inventoryEntry={inventoryEntry}
             setInventoryEntry={setInventoryEntry}
             availableInventoryLots={availableInventoryLots}
             selectedInventoryRow={selectedInventoryRow}
             inventoryDifference={inventoryDifference}
-            submitInventoryCount={submitInventoryCount}
+            submitInventoryCount={handleInventoryEntrySupabase}
             groupedFridgeStock={groupedFridgeStock}
             fridgeStock={fridgeStock}
           />
