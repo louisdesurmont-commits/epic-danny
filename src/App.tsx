@@ -67,6 +67,11 @@ import {
   getStockLotBySkuLot,
 } from "./services/supabaseStockService";
 
+import {
+  loadTransferOrdersFromSupabase,
+  replaceTransferOrdersInSupabase,
+} from "./services/supabaseTransferOrdersService";
+
 declare global {
   interface Window {
     XLSX?: {
@@ -236,6 +241,19 @@ export default function App() {
 
     loadStockData();
   }, [setFridgeStock, setMovements]);
+
+  useEffect(() => {
+    const loadTransferOrdersData = async () => {
+      try {
+        const rows = await loadTransferOrdersFromSupabase();
+        setTransferOrders(rows);
+      } catch (error) {
+        console.error("Erreur chargement OT :", error);
+      }
+    };
+
+    loadTransferOrdersData();
+  }, [setTransferOrders]);
 
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
@@ -656,7 +674,9 @@ export default function App() {
     setSelectedOtKey(null);
   }
 
-  function regenerateDefrostNeeds(importedOrders?: typeof transferOrders) {
+  async function regenerateDefrostNeeds(
+    importedOrders?: typeof transferOrders
+  ) {
     const orders = importedOrders ?? transferOrders;
 
     setDefrostList((prev) =>
@@ -669,14 +689,22 @@ export default function App() {
     );
   }
 
-  function recomputeDefrostNeeds() {
-    regenerateDefrostNeeds();
+  async function recomputeDefrostNeeds() {
+    try {
+      const latestOrders = await loadTransferOrdersFromSupabase();
+      setTransferOrders(latestOrders);
 
-    setRecomputeMessage("Besoins recalculés et mis à jour.");
+      await regenerateDefrostNeeds(latestOrders);
 
-    window.setTimeout(() => {
-      setRecomputeMessage("");
-    }, 3000);
+      setRecomputeMessage("Besoins recalculés et mis à jour.");
+
+      window.setTimeout(() => {
+        setRecomputeMessage("");
+      }, 3000);
+    } catch (error) {
+      console.error(error);
+      alert("Impossible de recalculer les besoins de décongélation.");
+    }
   }
 
   async function handleImportOTFile(event: ChangeEvent<HTMLInputElement>) {
@@ -702,12 +730,17 @@ export default function App() {
         return;
       }
 
-      setTransferOrders(importedOrders);
-      regenerateDefrostNeeds(importedOrders);
+      await replaceTransferOrdersInSupabase(importedOrders);
+
+      const savedOrders = await loadTransferOrdersFromSupabase();
+
+      setTransferOrders(savedOrders);
+      await regenerateDefrostNeeds(savedOrders);
+
       setSelectedBoutiqueKey(null);
       setSelectedOtKey(null);
 
-      alert(`${importedOrders.length} ligne(s) OT importée(s).`);
+      alert(`${savedOrders.length} ligne(s) OT importée(s).`);
     } catch (error) {
       console.error("Import error", error);
       alert(getImportErrorMessage(error));
@@ -829,7 +862,7 @@ export default function App() {
 
         <section className="mb-4 rounded-3xl bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
-            <span>Données conservées localement sur cet appareil.</span>
+            <span>Données synchronisées avec la base.</span>
             <button
               type="button"
               className="rounded border px-3 py-1"

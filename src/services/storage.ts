@@ -1,27 +1,11 @@
-import type {
-  Product,
-  TransferOrderLine,
-  Shipment,
-  DefrostLine,
-  FridgeStockRow,
-  MovementRow,
-  Screen,
-} from "../types";
+import type { Shipment, DefrostLine, Screen } from "../types";
 
-import {
-  assortmentProductsInitial,
-  defrostListInitial,
-  fridgeStockInitial,
-} from "../constants";
+import { defrostListInitial } from "../constants";
 
 export type AppData = {
   screen: Screen;
-  assortmentProducts: Product[];
-  transferOrders: TransferOrderLine[];
   shipments: Shipment[];
   defrostList: DefrostLine[];
-  fridgeStock: FridgeStockRow[];
-  movements: MovementRow[];
 };
 
 const STORAGE_KEY = "oai_app_data_v1";
@@ -29,12 +13,8 @@ const STORAGE_KEY = "oai_app_data_v1";
 export function getDefaultAppData(): AppData {
   return {
     screen: "gamme",
-    assortmentProducts: assortmentProductsInitial,
-    transferOrders: [],
     shipments: [],
     defrostList: defrostListInitial,
-    fridgeStock: fridgeStockInitial,
-    movements: [],
   };
 }
 
@@ -54,13 +34,8 @@ export function loadAppData(): AppData {
 
     return {
       screen: parsed.screen ?? "gamme",
-      assortmentProducts:
-        parsed.assortmentProducts ?? assortmentProductsInitial,
-      transferOrders: parsed.transferOrders ?? [],
       shipments: parsed.shipments ?? [],
       defrostList: parsed.defrostList ?? defrostListInitial,
-      fridgeStock: parsed.fridgeStock ?? fridgeStockInitial,
-      movements: parsed.movements ?? [],
     };
   } catch (error) {
     console.error("Erreur loadAppData", error);

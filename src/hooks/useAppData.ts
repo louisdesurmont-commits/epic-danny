@@ -8,10 +8,7 @@ import type {
   Shipment,
   TransferOrderLine,
 } from "../types";
-import {
-  loadInitialAppData,
-  persistAppData,
-} from "../services/appDataService";
+import { loadInitialAppData, persistAppData } from "../services/appDataService";
 
 type UseAppDataResult = {
   screen: Screen;
@@ -34,40 +31,26 @@ export function useAppData(): UseAppDataResult {
   const [appData] = useState(() => loadInitialAppData());
 
   const [screen, setScreen] = useState<Screen>(appData.screen);
-  const [assortmentProducts, setAssortmentProducts] = useState<Product[]>(
-    appData.assortmentProducts
-  );
-  const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>(
-    appData.transferOrders
-  );
+
+  // Désormais chargés depuis Supabase
+  const [assortmentProducts, setAssortmentProducts] = useState<Product[]>([]);
+  const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>([]);
+  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>([]);
+  const [movements, setMovements] = useState<MovementRow[]>([]);
+
+  // Encore en local pour l'instant
   const [shipments, setShipments] = useState<Shipment[]>(appData.shipments);
   const [defrostList, setDefrostList] = useState<DefrostLine[]>(
     appData.defrostList
   );
-  const [fridgeStock, setFridgeStock] = useState<FridgeStockRow[]>(
-    appData.fridgeStock
-  );
-  const [movements, setMovements] = useState<MovementRow[]>(appData.movements);
 
   useEffect(() => {
     persistAppData({
       screen,
-      assortmentProducts,
-      transferOrders,
       shipments,
       defrostList,
-      fridgeStock,
-      movements,
     });
-  }, [
-    screen,
-    assortmentProducts,
-    transferOrders,
-    shipments,
-    defrostList,
-    fridgeStock,
-    movements,
-  ]);
+  }, [screen, shipments, defrostList]);
 
   return {
     screen,
