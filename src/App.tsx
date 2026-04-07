@@ -283,17 +283,6 @@ export default function App() {
     [assortmentProducts]
   );
 
-  function normalizeSku(value: string) {
-    return value.trim().toUpperCase();
-  }
-
-  function resolveProductName(sku: string, typedName: string) {
-    const normalizedSku = normalizeSku(sku);
-    const product = assortmentBySku.get(normalizedSku);
-    if (product) return product.name;
-    return typedName.trim();
-  }
-
   async function updateTarget(
     productId: string,
     day: keyof Targets,
