@@ -78,6 +78,65 @@ declare global {
   }
 }
 
+async function loadStockLotsFromSupabase() {
+  const { data, error } = await supabase
+    .from("stock_lots")
+    .select("*")
+    .order("sku", { ascending: true })
+    .order("lot", { ascending: true });
+
+  if (error) {
+    console.error("Erreur chargement stock_lots :", error);
+    return null;
+  }
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    sku: row.sku,
+    name: row.product_name,
+    lot: row.lot,
+    qty: row.quantity ?? 0,
+    dlc: row.dlc ?? "",
+    source: "frigo",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+async function loadStockMovementsFromSupabase() {
+  const { data, error } = await supabase
+    .from("stock_movements")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Erreur chargement stock_movements :", error);
+    return null;
+  }
+
+  const movementTypeMap: Record<
+    string,
+    "AJUSTEMENT" | "INVENTAIRE" | "ENTREE_FRIGO" | "SORTIE_OT" | "EXPEDITION"
+  > = {
+    reception: "ENTREE_FRIGO",
+    adjustment: "AJUSTEMENT",
+    inventory_entry: "INVENTAIRE",
+    defrost: "SORTIE_OT",
+    shipment: "EXPEDITION",
+  };
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    type: movementTypeMap[row.movement_type] ?? "AJUSTEMENT",
+    sku: row.sku,
+    name: row.product_name,
+    lot: row.lot,
+    qty: row.quantity ?? 0,
+    reason: row.comment ?? "",
+    createdAt: row.created_at,
+  }));
+}
+
 export default function App() {
   const {
     screen,
@@ -187,7 +246,7 @@ export default function App() {
         return;
       }
 
-      const mappedProducts = (data ?? []).map((row) => ({
+      const mappedProducts = (data ?? []).map((row: any) => ({
         id: row.id,
         sku: row.sku,
         name: row.name,
@@ -208,6 +267,25 @@ export default function App() {
 
     loadCatalogProducts();
   }, [setAssortmentProducts]);
+
+  useEffect(() => {
+    const loadStockData = async () => {
+      const [stockRows, movementRows] = await Promise.all([
+        loadStockLotsFromSupabase(),
+        loadStockMovementsFromSupabase(),
+      ]);
+
+      if (stockRows) {
+        setFridgeStock(stockRows);
+      }
+
+      if (movementRows) {
+        setMovements(movementRows);
+      }
+    };
+
+    loadStockData();
+  }, [setFridgeStock, setMovements]);
 
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
