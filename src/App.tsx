@@ -11,7 +11,7 @@ import {
   getStatsCols,
 } from "./utils/format";
 
-import { uid } from "./utils/stock";
+import { uid, computeTransferNeed } from "./utils/stock";
 
 import {
   regenerateDefrostNeedsData,
@@ -311,6 +311,88 @@ export default function App() {
   async function persistDefrostList(nextList: typeof defrostList) {
     await saveDefrostStateToSupabase(nextList);
     setDefrostList(nextList);
+  }
+
+  async function updateDefrostPlanning(
+    lineId: string,
+    patch: {
+      unitsPerCaseOverride?: number | undefined;
+      casesToPrepare?: number | undefined;
+    }
+  ) {
+    const nextList = defrostList.map((line) => {
+      if (line.id !== lineId || line.validated) {
+        return line;
+      }
+
+      const product = assortmentBySku.get(line.sku.trim().toUpperCase());
+      const isInAssortment = line.isInAssortment ?? Boolean(product);
+
+      const baseUnitsPerCase = product?.unitsPerCase ?? 1;
+
+      const nextUnitsPerCaseOverride =
+        patch.unitsPerCaseOverride !== undefined
+          ? patch.unitsPerCaseOverride
+          : line.unitsPerCaseOverride;
+
+      const unitsPerCase =
+        !isInAssortment && (nextUnitsPerCaseOverride ?? 0) > 0
+          ? nextUnitsPerCaseOverride!
+          : baseUnitsPerCase;
+
+      const safeUnitsPerCase = unitsPerCase > 0 ? unitsPerCase : 1;
+
+      const importedOt = otBySku[line.sku] ?? line.ot;
+      const grossNeed = computeTransferNeed(
+        line.stock,
+        line.target,
+        importedOt
+      );
+      const computedCasesNeeded = grossNeed / safeUnitsPerCase;
+
+      const floorCases = Math.max(0, Math.floor(computedCasesNeeded));
+      const ceilCases = Math.max(0, Math.ceil(computedCasesNeeded));
+
+      const floorNetNeed = floorCases * safeUnitsPerCase;
+      const ceilNetNeed = ceilCases * safeUnitsPerCase;
+
+      const floorEndOfDayStock = line.stock + floorNetNeed - importedOt;
+      const ceilEndOfDayStock = line.stock + ceilNetNeed - importedOt;
+
+      const floorGapToTarget = Math.abs(floorEndOfDayStock - line.target);
+      const ceilGapToTarget = Math.abs(ceilEndOfDayStock - line.target);
+
+      const defaultCasesToPrepare =
+        ceilGapToTarget <= floorGapToTarget ? ceilCases : floorCases;
+
+      const nextCasesToPrepare =
+        patch.casesToPrepare !== undefined
+          ? patch.casesToPrepare
+          : line.casesToPrepare ?? defaultCasesToPrepare;
+
+      const safeCasesToPrepare =
+        Number.isFinite(nextCasesToPrepare) && nextCasesToPrepare >= 0
+          ? Math.floor(nextCasesToPrepare)
+          : defaultCasesToPrepare;
+
+      const netNeed = safeCasesToPrepare * safeUnitsPerCase;
+
+      return {
+        ...line,
+        unitsPerCaseOverride: nextUnitsPerCaseOverride,
+        casesToPrepare: safeCasesToPrepare,
+        transferQty: netNeed,
+        allocations:
+          line.allocations.length > 0
+            ? line.allocations.map((allocation, index) => ({
+                ...allocation,
+                qty: index === 0 ? netNeed : allocation.qty,
+              }))
+            : [{ id: uid("ALLOC"), lot: "", qty: netNeed }],
+      };
+    });
+
+    await persistDefrostList(nextList);
   }
 
   async function updateTarget(
@@ -1023,6 +1105,7 @@ export default function App() {
             assortmentProducts={assortmentProducts}
             otBySku={otBySku}
             viewMode={viewMode}
+            updateDefrostPlanning={updateDefrostPlanning}
           />
         )}
 

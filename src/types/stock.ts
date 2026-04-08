@@ -13,7 +13,10 @@ export type DefrostLine = {
   target: number;
   transferQty: number;
   validated: boolean;
+  isInAssortment?: boolean;
   allocations: DefrostAllocation[];
+  unitsPerCaseOverride?: number;
+  casesToPrepare?: number;
 };
 
 export type FridgeStockRow = {

@@ -24,89 +24,114 @@ export function regenerateDefrostNeedsData({
   previousDefrostList,
 }: RegenerateDefrostNeedsParams): DefrostLine[] {
   const incomingBySku = orders.reduce<Record<string, number>>((acc, row) => {
-    acc[row.sku] = (acc[row.sku] ?? 0) + row.qty;
+    const sku = row.sku.trim().toUpperCase();
+    acc[sku] = (acc[sku] ?? 0) + row.qty;
     return acc;
   }, {});
+
+  const orderNameBySku = orders.reduce<Record<string, string>>((acc, row) => {
+    const sku = row.sku.trim().toUpperCase();
+    if (!acc[sku] && row.name?.trim()) {
+      acc[sku] = row.name.trim();
+    }
+    return acc;
+  }, {});
+
+  const assortmentBySku = new Map(
+    assortmentProducts.map((product) => [
+      product.sku.trim().toUpperCase(),
+      product,
+    ])
+  );
+
+  const otSkus = Object.keys(incomingBySku);
 
   const validatedLines = previousDefrostList.filter((line) => line.validated);
   const unvalidatedLines = previousDefrostList.filter(
     (line) => !line.validated
   );
 
-  const nextUnvalidatedLines: DefrostLine[] = assortmentProducts.flatMap(
-    (product) => {
-      const stock = fridgeStock
-        .filter((row) => row.sku === product.sku)
-        .reduce((sum, row) => sum + row.qty, 0);
+  const nextUnvalidatedLines: DefrostLine[] = otSkus.flatMap((sku) => {
+    const product = assortmentBySku.get(sku);
 
-      const ot = incomingBySku[product.sku] ?? 0;
-      const target = getTodayTarget(product.targets);
-      const need = computeTransferNeed(stock, target, ot);
+    const stock = fridgeStock
+      .filter((row) => row.sku.trim().toUpperCase() === sku)
+      .reduce((sum, row) => sum + row.qty, 0);
 
-      const existingOpenLine = unvalidatedLines.find(
-        (line) => line.sku === product.sku
-      );
+    const ot = incomingBySku[sku] ?? 0;
+    const target = product ? getTodayTarget(product.targets) : 0;
+    const need = computeTransferNeed(stock, target, ot);
 
-      if (need <= 0) {
-        return [];
-      }
+    const existingOpenLine = unvalidatedLines.find(
+      (line) => line.sku.trim().toUpperCase() === sku
+    );
 
-      if (existingOpenLine) {
-        return [
-          {
-            ...existingOpenLine,
-            name: product.name,
-            stock,
-            ot,
-            target,
-            transferQty: need,
-            allocations:
-              existingOpenLine.allocations.length > 0
-                ? existingOpenLine.allocations.map((allocation, index) => ({
-                    ...allocation,
-                    qty: index === 0 ? need : allocation.qty,
-                  }))
-                : [{ id: uid("ALLOC"), lot: "", qty: need }],
-          },
-        ];
-      }
+    const resolvedName =
+      product?.name ?? orderNameBySku[sku] ?? existingOpenLine?.name ?? sku;
 
+    if (need <= 0) {
+      return [];
+    }
+
+    if (existingOpenLine) {
       return [
         {
-          id: uid(`DL-${product.sku}`),
-          sku: product.sku,
-          name: product.name,
+          ...existingOpenLine,
+          sku,
+          name: resolvedName,
           stock,
           ot,
           target,
           transferQty: need,
-          validated: false,
-          allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
+          isInAssortment: Boolean(product),
+          allocations:
+            existingOpenLine.allocations.length > 0
+              ? existingOpenLine.allocations.map((allocation, index) => ({
+                  ...allocation,
+                  qty: index === 0 ? need : allocation.qty,
+                }))
+              : [{ id: uid("ALLOC"), lot: "", qty: need }],
         },
       ];
     }
-  );
 
-  const updatedValidatedLines = validatedLines
-    .filter((line) =>
-      assortmentProducts.some((product) => product.sku === line.sku)
-    )
-    .map((line) => {
-      const product = assortmentProducts.find((item) => item.sku === line.sku);
-      const stock = fridgeStock
-        .filter((row) => row.sku === line.sku)
-        .reduce((sum, row) => sum + row.qty, 0);
-      const ot = incomingBySku[line.sku] ?? 0;
-      const target = product ? getTodayTarget(product.targets) : line.target;
-
-      return {
-        ...line,
-        name: product?.name ?? line.name,
+    return [
+      {
+        id: uid(`DL-${sku}`),
+        sku,
+        name: resolvedName,
         stock,
         ot,
         target,
-      };
-    });
+        transferQty: need,
+        validated: false,
+        isInAssortment: Boolean(product),
+        allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
+      },
+    ];
+  });
+
+  const updatedValidatedLines = validatedLines.map((line) => {
+    const sku = line.sku.trim().toUpperCase();
+    const product = assortmentBySku.get(sku);
+
+    const stock = fridgeStock
+      .filter((row) => row.sku.trim().toUpperCase() === sku)
+      .reduce((sum, row) => sum + row.qty, 0);
+
+    const ot = incomingBySku[sku] ?? 0;
+    const target = product ? getTodayTarget(product.targets) : 0;
+
+    return {
+      ...line,
+      sku,
+      name: product?.name ?? orderNameBySku[sku] ?? line.name,
+      stock,
+      ot,
+      target,
+      isInAssortment: Boolean(product),
+    };
+  });
 
   return [...updatedValidatedLines, ...nextUnvalidatedLines];
 }
