@@ -281,19 +281,6 @@ export default function ExpeditionsScreen({
     return sortedRows;
   }, [filteredHistoryRows, shipments, historySort, historyFilters.lot]);
 
-  const shipmentsByDate = useMemo(() => {
-    return filteredHistoryRows.reduce<Record<string, ShipmentHistoryRow[]>>(
-      (acc, shipment) => {
-        if (!acc[shipment.createdDate]) {
-          acc[shipment.createdDate] = [];
-        }
-        acc[shipment.createdDate].push(shipment);
-        return acc;
-      },
-      {}
-    );
-  }, [filteredHistoryRows]);
-
   function resetHistoryOptionalFilters() {
     setHistoryFilters((prev) => ({
       ...prev,

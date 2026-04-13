@@ -1,6 +1,10 @@
-import type { ShipmentDisplayStatus, ShipmentLineStatus } from "../types";
-
-type Status = ShipmentDisplayStatus | ShipmentLineStatus;
+type Status =
+  | "in_progress"
+  | "shipped_complete"
+  | "shipped_partial"
+  | "full_shortage"
+  | "complete"
+  | "partial";
 
 const STATUS_STYLES: Record<Status, string> = {
   in_progress: "bg-slate-100 text-slate-700 ring-slate-200",

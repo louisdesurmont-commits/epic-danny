@@ -2,7 +2,7 @@ import { clearAppData } from "./services/storage";
 import NavButton from "./components/NavButton";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 
-import type { Targets, ViewMode } from "./types";
+import type { DefrostLine, Targets, ViewMode } from "./types";
 
 import {
   getTodayTargetKey,
@@ -67,6 +67,8 @@ import {
   loadDefrostStateFromSupabase,
   saveDefrostStateToSupabase,
 } from "./services/supabaseDefrostService";
+
+import type { ParsedLabelResult } from "./types/scan";
 
 declare global {
   interface Window {
@@ -679,6 +681,23 @@ export default function App() {
     });
   }
 
+  async function replaceAllocations(
+    lineId: string,
+    nextAllocations: DefrostLine["allocations"]
+  ) {
+    const nextList = defrostList.map((line) =>
+      line.id === lineId
+        ? {
+            ...line,
+            allocations: nextAllocations,
+          }
+        : line
+    );
+
+    await saveDefrostStateToSupabase(nextList);
+    setDefrostList(nextList);
+  }
+
   function addAllocation(lineId: string) {
     const nextList = defrostList.map((line) =>
       line.id === lineId
@@ -698,6 +717,117 @@ export default function App() {
       console.error(error);
       alert("Impossible d'enregistrer la modification de la décongélation.");
     });
+  }
+
+  function normalizeArticleCode(value: string): string {
+    const cleaned = value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+
+    if (/^1\d{6}$/.test(cleaned)) {
+      return `I${cleaned.slice(1)}`;
+    }
+
+    return cleaned;
+  }
+
+  function articleCodesMatch(a: string, b: string): boolean {
+    return normalizeArticleCode(a) === normalizeArticleCode(b);
+  }
+
+  async function applyScannedLabel(
+    result: ParsedLabelResult,
+    options?: { targetLineId?: string }
+  ) {
+    const normalizedArticle = result.articleNumber
+      ? normalizeArticleCode(result.articleNumber)
+      : "";
+    const normalizedLot = result.lotNumber?.trim().toUpperCase() ?? "";
+
+    if (!normalizedArticle && !normalizedLot) {
+      alert("Aucune donnée exploitable détectée sur l’étiquette.");
+      return;
+    }
+
+    let targetLineId = options?.targetLineId;
+
+    if (!targetLineId && normalizedArticle) {
+      const matchedLine = remainingLines.find((line) =>
+        articleCodesMatch(line.sku, normalizedArticle)
+      );
+
+      if (matchedLine) {
+        targetLineId = matchedLine.id;
+      }
+    }
+
+    if (!targetLineId) {
+      alert(
+        normalizedArticle
+          ? `Aucune ligne de décongélation correspondante pour l’article ${normalizedArticle}.`
+          : "Le lot a été détecté, mais aucun article n’a permis d’identifier la ligne."
+      );
+      return;
+    }
+
+    const targetLine = defrostList.find((line) => line.id === targetLineId);
+
+    if (!targetLine) {
+      alert("Ligne cible introuvable.");
+      return;
+    }
+
+    const currentAllocations =
+      targetLine.allocations.length > 0
+        ? targetLine.allocations
+        : [
+            {
+              id: uid("ALLOC"),
+              lot: "",
+              qty:
+                Number.isFinite(Number(targetLine.transferQty)) &&
+                Number(targetLine.transferQty) >= 0
+                  ? Number(targetLine.transferQty)
+                  : 0,
+            },
+          ];
+
+    const firstEmptyIndex = currentAllocations.findIndex(
+      (allocation) => allocation.lot.trim() === ""
+    );
+
+    const nextAllocations = currentAllocations.map((allocation, index) => {
+      if (!normalizedLot) {
+        return allocation;
+      }
+
+      if (firstEmptyIndex >= 0) {
+        return index === firstEmptyIndex
+          ? { ...allocation, lot: normalizedLot }
+          : allocation;
+      }
+
+      return index === 0 ? { ...allocation, lot: normalizedLot } : allocation;
+    });
+
+    const nextList = defrostList.map((line) =>
+      line.id === targetLineId
+        ? {
+            ...line,
+            allocations: nextAllocations,
+          }
+        : line
+    );
+
+    setDefrostList(nextList);
+
+    try {
+      await saveDefrostStateToSupabase(nextList);
+    } catch (error) {
+      console.error(error);
+      alert("Impossible d’enregistrer le résultat du scan.");
+    }
   }
 
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1117,9 +1247,11 @@ export default function App() {
             updateTransferQty={updateTransferQty}
             addAllocation={addAllocation}
             updateAllocation={updateAllocation}
+            replaceAllocations={replaceAllocations}
             validateLine={validateLine}
             ignoreLine={ignoreLine}
             validateRemaining={validateRemaining}
+            applyScannedLabel={applyScannedLabel}
           />
         )}
 
