@@ -132,6 +132,7 @@ export default function ExpeditionsScreen({
     key: "createdAt",
     direction: "desc",
   });
+
   const selectedBoutique =
     availableShipmentBoutiques.find(
       (b) => b.key === selectedShipmentBoutiqueKey
@@ -347,6 +348,40 @@ export default function ExpeditionsScreen({
     link.download = `historique_expeditions_${
       historyFilters.startDate || "debut"
     }_${historyFilters.endDate || "fin"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleGenerateBlPdf() {
+    if (filteredHistoryRows.length === 0) return;
+
+    const selectedShipments = shipments.filter((shipment) =>
+      filteredHistoryRows.some((row) => row.shipmentId === shipment.id)
+    );
+
+    if (selectedShipments.length === 0) {
+      alert("Aucune expédition à imprimer.");
+      return;
+    }
+
+    const { mapShipmentToDeliveryNote } = await import(
+      "../utils/deliveryNoteMapper"
+    );
+    const { generateDeliveryNotesPdf } = await import(
+      "../services/deliveryNotePdfService"
+    );
+
+    const notes = selectedShipments.map(mapShipmentToDeliveryNote);
+    const blob = await generateDeliveryNotesPdf(notes);
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `bons_de_livraison_${historyFilters.startDate || "debut"}_${
+      historyFilters.endDate || "fin"
+    }.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -842,14 +877,25 @@ export default function ExpeditionsScreen({
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="rounded-xl border px-3 py-2 text-sm"
-                onClick={exportHistoryCsv}
-                disabled={filteredHistoryRows.length === 0}
-              >
-                Export CSV
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border px-3 py-2 text-sm"
+                  onClick={handleGenerateBlPdf}
+                  disabled={filteredHistoryRows.length === 0}
+                >
+                  Générer BL PDF
+                </button>
+
+                <button
+                  type="button"
+                  className="rounded-xl border px-3 py-2 text-sm"
+                  onClick={exportHistoryCsv}
+                  disabled={filteredHistoryRows.length === 0}
+                >
+                  Export CSV
+                </button>
+              </div>
             </div>
 
             {filteredHistoryRows.length === 0 ? (
