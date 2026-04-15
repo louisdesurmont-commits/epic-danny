@@ -13,6 +13,7 @@ export type DefrostLine = {
   target: number;
   transferQty: number;
   validated: boolean;
+  ignored: boolean;
   isInAssortment?: boolean;
   allocations: DefrostAllocation[];
   unitsPerCaseOverride?: number;

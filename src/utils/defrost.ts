@@ -14,7 +14,9 @@ type RegenerateDefrostNeedsParams = {
 };
 
 export function getRemainingDefrostLines(lines: DefrostLine[]): DefrostLine[] {
-  return lines.filter((line) => !line.validated && line.transferQty > 0);
+  return lines.filter(
+    (line) => !line.validated && !line.ignored && line.transferQty > 0
+  );
 }
 
 export function regenerateDefrostNeedsData({
@@ -83,6 +85,7 @@ export function regenerateDefrostNeedsData({
           ot,
           target,
           transferQty: need,
+          ignored: existingOpenLine.ignored ?? false,
           isInAssortment: Boolean(product),
           allocations:
             existingOpenLine.allocations.length > 0
@@ -105,6 +108,7 @@ export function regenerateDefrostNeedsData({
         target,
         transferQty: need,
         validated: false,
+        ignored: false, // ✅ AJOUT
         isInAssortment: Boolean(product),
         allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
       },

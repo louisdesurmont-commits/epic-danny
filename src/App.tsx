@@ -1086,8 +1086,61 @@ export default function App() {
   }
 
   async function validateRemaining() {
-    for (const line of remainingLines) {
-      await validateLine(line.id);
+    const linesToValidate = defrostList.filter(
+      (line) => !line.validated && !line.ignored
+    );
+
+    try {
+      for (const line of linesToValidate) {
+        const validAllocations = line.allocations.filter(
+          (allocation) => allocation.lot.trim() !== "" && allocation.qty > 0
+        );
+
+        for (const allocation of validAllocations) {
+          const existingLot = await getStockLotBySkuLot({
+            sku: line.sku,
+            lot: allocation.lot,
+          });
+
+          const currentQty = existingLot?.quantity ?? 0;
+
+          await upsertStockLot({
+            sku: line.sku,
+            productName: line.name,
+            lot: allocation.lot,
+            quantity: currentQty + allocation.qty,
+            dlc: existingLot?.dlc ?? undefined,
+          });
+
+          await insertStockMovement({
+            type: "reception",
+            sku: line.sku,
+            productName: line.name,
+            lot: allocation.lot,
+            quantity: allocation.qty,
+            comment: `Validation décongélation ${line.id}`,
+          });
+        }
+      }
+
+      // ✅ Mise à jour EN UNE FOIS
+      const nextList = defrostList.map((line) =>
+        linesToValidate.some((l) => l.id === line.id)
+          ? { ...line, validated: true, ignored: false }
+          : line
+      );
+
+      await saveDefrostStateToSupabase(nextList);
+
+      const { stockRows, movementRows } = await reloadStockAndMovements();
+
+      if (stockRows) setFridgeStock(stockRows);
+      if (movementRows) setMovements(movementRows);
+
+      setDefrostList(nextList);
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de la validation du reste.");
     }
   }
 
