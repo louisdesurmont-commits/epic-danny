@@ -62,7 +62,7 @@ export function regenerateDefrostNeedsData({
 
     const ot = incomingBySku[sku] ?? 0;
     const target = product ? getTodayTarget(product.targets) : 0;
-    const need = computeTransferNeed(stock, target, ot);
+    const grossNeed = computeTransferNeed(stock, target, ot);
 
     const existingOpenLine = unvalidatedLines.find(
       (line) => line.sku.trim().toUpperCase() === sku
@@ -71,7 +71,39 @@ export function regenerateDefrostNeedsData({
     const resolvedName =
       product?.name ?? orderNameBySku[sku] ?? existingOpenLine?.name ?? sku;
 
-    if (need <= 0) {
+    const isInAssortment =
+      existingOpenLine?.isInAssortment ?? Boolean(product);
+
+    const baseUnitsPerCase = product?.unitsPerCase ?? 1;
+    const unitsPerCase =
+      !isInAssortment && (existingOpenLine?.unitsPerCaseOverride ?? 0) > 0
+        ? existingOpenLine!.unitsPerCaseOverride!
+        : baseUnitsPerCase;
+
+    const safeUnitsPerCase = unitsPerCase > 0 ? unitsPerCase : 1;
+    const casesNeeded = grossNeed / safeUnitsPerCase;
+
+    const floorCases = Math.max(0, Math.floor(casesNeeded));
+    const ceilCases = Math.max(0, Math.ceil(casesNeeded));
+
+    const floorNetNeed = floorCases * safeUnitsPerCase;
+    const ceilNetNeed = ceilCases * safeUnitsPerCase;
+
+    const floorEndOfDayStock = stock + floorNetNeed - ot;
+    const ceilEndOfDayStock = stock + ceilNetNeed - ot;
+
+    const floorGapToTarget = Math.abs(floorEndOfDayStock - target);
+    const ceilGapToTarget = Math.abs(ceilEndOfDayStock - target);
+
+    const defaultCasesToPrepare =
+      ceilGapToTarget <= floorGapToTarget ? ceilCases : floorCases;
+
+    const casesToPrepare =
+      existingOpenLine?.casesToPrepare ?? defaultCasesToPrepare;
+
+    const netNeed = casesToPrepare * safeUnitsPerCase;
+
+    if (netNeed <= 0) {
       return [];
     }
 
@@ -84,16 +116,16 @@ export function regenerateDefrostNeedsData({
           stock,
           ot,
           target,
-          transferQty: need,
+          transferQty: netNeed,
           ignored: existingOpenLine.ignored ?? false,
-          isInAssortment: Boolean(product),
+          isInAssortment,
           allocations:
             existingOpenLine.allocations.length > 0
               ? existingOpenLine.allocations.map((allocation, index) => ({
                   ...allocation,
-                  qty: index === 0 ? need : allocation.qty,
+                  qty: index === 0 ? netNeed : allocation.qty,
                 }))
-              : [{ id: uid("ALLOC"), lot: "", qty: need }],
+              : [{ id: uid("ALLOC"), lot: "", qty: netNeed }],
         },
       ];
     }
@@ -106,11 +138,13 @@ export function regenerateDefrostNeedsData({
         stock,
         ot,
         target,
-        transferQty: need,
+        transferQty: netNeed,
         validated: false,
-        ignored: false, // ✅ AJOUT
-        isInAssortment: Boolean(product),
-        allocations: [{ id: uid("ALLOC"), lot: "", qty: need }],
+        ignored: false,
+        isInAssortment,
+        unitsPerCaseOverride: !isInAssortment ? safeUnitsPerCase : undefined,
+        casesToPrepare,
+        allocations: [{ id: uid("ALLOC"), lot: "", qty: netNeed }],
       },
     ];
   });

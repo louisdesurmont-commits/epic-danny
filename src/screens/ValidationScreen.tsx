@@ -60,7 +60,6 @@ export default function ValidationScreen({
   applyScannedLabel,
 }: Props) {
   const [scanOpen, setScanOpen] = useState(false);
-  const [scanTargetLineId, setScanTargetLineId] = useState<string | null>(null);
   const [lastScanResult, setLastScanResult] =
     useState<ParsedLabelResult | null>(null);
   const [highlightedLineId, setHighlightedLineId] = useState<string | null>(
@@ -98,10 +97,7 @@ export default function ValidationScreen({
 
     return normalized.map((allocation, index) =>
       index === lastIndex
-        ? {
-            ...allocation,
-            qty: nextLastQty,
-          }
+        ? { ...allocation, qty: nextLastQty }
         : allocation
     );
   }
@@ -135,15 +131,12 @@ export default function ValidationScreen({
       (allocation) => allocation.id === allocationId
     );
 
-    if (editedIndex < 0) {
-      return;
-    }
+    if (editedIndex < 0) return;
 
     if (currentAllocations.length === 1) {
-      const onlyAllocation = currentAllocations[0];
       replaceAllocations(line.id, [
         {
-          ...onlyAllocation,
+          ...currentAllocations[0],
           qty: transferQty,
         },
       ]);
@@ -174,17 +167,11 @@ export default function ValidationScreen({
 
     const nextAllocations = currentAllocations.map((allocation, index) => {
       if (index === editedIndex) {
-        return {
-          ...allocation,
-          qty: safeEditedQty,
-        };
+        return { ...allocation, qty: safeEditedQty };
       }
 
       if (index === balancingIndex) {
-        return {
-          ...allocation,
-          qty: balancingQty,
-        };
+        return { ...allocation, qty: balancingQty };
       }
 
       return allocation;
@@ -220,7 +207,6 @@ export default function ValidationScreen({
   }
 
   function openGlobalScan() {
-    setScanTargetLineId(null);
     setScanOpen(true);
   }
 
@@ -244,13 +230,13 @@ export default function ValidationScreen({
     }
   }
 
-  const hasInvalidLines = remainingLines.some((line) => !canValidateLine(line));
-
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold">Validation décongélation</h2>
+          <h2 className="font-semibold text-slate-900">
+            Validation décongélation
+          </h2>
           <p className="text-xs text-slate-500">
             Saisie des lots réellement entrés en stock frigo
           </p>
@@ -260,7 +246,7 @@ export default function ValidationScreen({
           <GlobalScanButton onClick={openGlobalScan} />
           <button
             type="button"
-            className="rounded bg-black px-3 py-2 text-sm text-white"
+            className="rounded-lg bg-black px-3 py-2 text-sm text-white"
             onClick={handleValidateRemaining}
           >
             Valider reste
@@ -269,29 +255,13 @@ export default function ValidationScreen({
       </div>
 
       {lastScanResult && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div>
-              <div className="text-xs text-slate-500">Article détecté</div>
-              <div className="font-semibold text-slate-900">
-                {lastScanResult.articleNumber ?? "Non détecté"}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Lot détecté</div>
-              <div className="font-semibold text-slate-900">
-                {lastScanResult.lotNumber ?? "Non détecté"}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Confiance OCR</div>
-              <div className="font-semibold text-slate-900">
-                {typeof lastScanResult.confidence === "number"
-                  ? `${Math.round(lastScanResult.confidence)} %`
-                  : "N/A"}
-              </div>
-            </div>
-          </div>
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <span className="font-medium">Scan :</span>{" "}
+          article {lastScanResult.articleNumber ?? "non détecté"} · lot{" "}
+          {lastScanResult.lotNumber ?? "non détecté"}
+          {typeof lastScanResult.confidence === "number"
+            ? ` · ${Math.round(lastScanResult.confidence)} %`
+            : ""}
         </div>
       )}
 
@@ -301,10 +271,8 @@ export default function ValidationScreen({
         </div>
       ) : (
         <>
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Vérifie que, pour chaque ligne, la somme des quantités par lot est
-            exactement égale à la quantité transférée. Sinon, la validation sera
-            bloquée.
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            La validation est bloquée si la somme des quantités par lot est différente de la quantité transférée.
           </div>
 
           <div
@@ -330,127 +298,111 @@ export default function ValidationScreen({
               return (
                 <article
                   key={line.id}
-                  className={`rounded-2xl border bg-white p-3 ${
+                  className={`rounded-2xl border border-slate-200 bg-white p-3 ${
                     isHighlighted ? "ring-2 ring-blue-500" : ""
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate font-semibold leading-tight">
+                      <h3 className="truncate text-sm font-semibold text-slate-900">
                         {line.name}
                       </h3>
-                      <p className="mt-1 text-xs text-slate-500">{line.sku}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{line.sku}</p>
                     </div>
 
-                    <div className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                      Besoin net {transferQty}
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="mb-1 block text-xs font-medium text-slate-600">
-                      Quantité transférée
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={transferQty}
-                      onChange={(event) =>
-                        handleTransferQtyChange(line, event.target.value)
-                      }
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-slate-400"
-                    />
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-700">
-                        Lots saisis
-                      </p>
-
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                        onClick={() => addAllocation(line.id)}
-                      >
-                        + Ajouter un lot
-                      </button>
-                    </div>
-
-                    <div className="mt-2 rounded-xl bg-white px-3 py-2 text-xs">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">
-                          Total lots : {allocationSum}
-                        </span>
-                        <span
-                          className={
-                            difference === 0
-                              ? "font-medium text-emerald-700"
-                              : "font-medium text-amber-700"
-                          }
-                        >
-                          {difference === 0
-                            ? "Somme correcte"
-                            : `Écart : ${
-                                difference > 0 ? "+" : ""
-                              }${difference}`}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {line.allocations.map((allocation, index) => (
-                        <div
-                          key={allocation.id}
-                          className="rounded-xl bg-white p-2"
-                        >
-                          <div className="mb-2 text-xs text-slate-500">
-                            Lot {index + 1}
-                          </div>
-
-                          <div className="grid grid-cols-[1fr_96px] gap-2">
-                            <input
-                              value={allocation.lot}
-                              onChange={(event) =>
-                                updateAllocation(
-                                  line.id,
-                                  allocation.id,
-                                  "lot",
-                                  event.target.value
-                                )
-                              }
-                              placeholder="Numéro de lot"
-                              className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-slate-400"
-                            />
-
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={toSafeQty(allocation.qty)}
-                              onChange={(event) =>
-                                handleAllocationQtyChange(
-                                  line,
-                                  allocation.id,
-                                  event.target.value
-                                )
-                              }
-                              className="rounded-lg border border-slate-300 px-3 py-2 text-right outline-none focus:border-slate-400"
-                            />
-                          </div>
-                        </div>
-                      ))}
+                    <div className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                      Besoin net : {transferQty}
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-2">
+                  <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                        Quantité transférée
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={transferQty}
+                        onChange={(event) =>
+                          handleTransferQtyChange(line, event.target.value)
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                      />
+                    </div>
+
                     <button
                       type="button"
-                      className={`w-full rounded-xl px-3 py-2 text-sm text-white ${
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                      onClick={() => addAllocation(line.id)}
+                    >
+                      + Lot
+                    </button>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Total lots : {allocationSum}</span>
+                    <span
+                      className={
+                        difference === 0
+                          ? "font-medium text-emerald-700"
+                          : "font-medium text-amber-700"
+                      }
+                    >
+                      {difference === 0
+                        ? "OK"
+                        : `Écart : ${difference > 0 ? "+" : ""}${difference}`}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {line.allocations.map((allocation, index) => (
+                      <div
+                        key={allocation.id}
+                        className="grid grid-cols-[56px_1fr_84px] items-center gap-2"
+                      >
+                        <div className="text-xs text-slate-400">Lot {index + 1}</div>
+
+                        <input
+                          value={allocation.lot}
+                          onChange={(event) =>
+                            updateAllocation(
+                              line.id,
+                              allocation.id,
+                              "lot",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Numéro de lot"
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                        />
+
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={toSafeQty(allocation.qty)}
+                          onChange={(event) =>
+                            handleAllocationQtyChange(
+                              line,
+                              allocation.id,
+                              event.target.value
+                            )
+                          }
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-right text-sm outline-none focus:border-slate-400"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`rounded-lg px-3 py-2 text-sm ${
                         lineCanValidate
-                          ? "bg-black"
-                          : "cursor-not-allowed bg-slate-300"
+                          ? "bg-black text-white"
+                          : "bg-slate-200 text-slate-500"
                       }`}
                       onClick={() => {
                         if (!lineCanValidate) {
@@ -463,32 +415,21 @@ export default function ValidationScreen({
                         validateLine(line.id);
                       }}
                     >
-                      Valider cette ligne
+                      Valider
                     </button>
 
                     <button
                       type="button"
-                      className="w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                       onClick={() => ignoreLine(line.id)}
                     >
-                      Ignorer le besoin
+                      Ignorer
                     </button>
                   </div>
                 </article>
               );
             })}
           </div>
-
-          <p className="mt-4 text-xs text-slate-500">
-            Une ligne validée crée une entrée réelle en stock frigo puis
-            disparaît de la liste à traiter.
-          </p>
-
-          {hasInvalidLines && (
-            <p className="mt-2 text-xs text-amber-700">
-              Certaines lignes ne sont pas encore validables.
-            </p>
-          )}
         </>
       )}
 
@@ -496,7 +437,6 @@ export default function ValidationScreen({
         open={scanOpen}
         onClose={() => {
           setScanOpen(false);
-          setScanTargetLineId(null);
         }}
         onDetected={handleDetected}
       />
