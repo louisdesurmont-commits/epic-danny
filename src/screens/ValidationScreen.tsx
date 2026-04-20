@@ -224,22 +224,12 @@ export default function ValidationScreen({
     setScanOpen(true);
   }
 
-  function openLineScan(lineId: string) {
-    setScanTargetLineId(lineId);
-    setScanOpen(true);
-  }
-
   async function handleDetected(result: ParsedLabelResult) {
     setLastScanResult(result);
 
     await applyScannedLabel(result, {
-      targetLineId: scanTargetLineId ?? undefined,
+      targetLineId: undefined,
     });
-
-    if (scanTargetLineId) {
-      setHighlightedLineId(scanTargetLineId);
-      return;
-    }
 
     if (result.articleNumber) {
       const matchedLine = remainingLines.find(
@@ -253,6 +243,8 @@ export default function ValidationScreen({
       setHighlightedLineId(null);
     }
   }
+
+  const hasInvalidLines = remainingLines.some((line) => !canValidateLine(line));
 
   return (
     <section className="rounded-3xl bg-white p-4 shadow-sm">
@@ -309,6 +301,12 @@ export default function ValidationScreen({
         </div>
       ) : (
         <>
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Vérifie que, pour chaque ligne, la somme des quantités par lot est
+            exactement égale à la quantité transférée. Sinon, la validation sera
+            bloquée.
+          </div>
+
           <div
             className={`mt-4 grid gap-3 ${
               viewMode === "mobile"
@@ -444,22 +442,7 @@ export default function ValidationScreen({
                         </div>
                       ))}
                     </div>
-
-                    <button
-                      type="button"
-                      className="mt-3 w-full rounded-xl bg-black px-3 py-2 text-sm text-white"
-                      onClick={() => openLineScan(line.id)}
-                    >
-                      Prendre photo
-                    </button>
                   </div>
-
-                  {!lineCanValidate && (
-                    <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      La somme des quantités par lot doit être exactement égale
-                      à la quantité transférée.
-                    </div>
-                  )}
 
                   <div className="mt-4 grid grid-cols-1 gap-2">
                     <button
@@ -500,6 +483,12 @@ export default function ValidationScreen({
             Une ligne validée crée une entrée réelle en stock frigo puis
             disparaît de la liste à traiter.
           </p>
+
+          {hasInvalidLines && (
+            <p className="mt-2 text-xs text-amber-700">
+              Certaines lignes ne sont pas encore validables.
+            </p>
+          )}
         </>
       )}
 
