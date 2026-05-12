@@ -12,6 +12,8 @@ export type MovementRow = {
   qty: number;
   reason: string;
   createdAt?: string;
+  userId?: string;
+  username?: string;
 };
 
 export type ManualAdjustmentForm = {

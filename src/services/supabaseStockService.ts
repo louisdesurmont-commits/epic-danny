@@ -63,6 +63,8 @@ export async function loadStockMovementsFromSupabase() {
     qty: row.quantity ?? 0,
     reason: row.comment ?? "",
     createdAt: row.created_at,
+    userId: row.user_id ?? undefined,
+    username: row.username ?? "",
   }));
 }
 
@@ -140,6 +142,8 @@ export async function insertStockMovement({
   lot,
   quantity,
   comment,
+  userId,
+  username,
 }: {
   type: SupabaseMovementType;
   sku: string;
@@ -147,6 +151,8 @@ export async function insertStockMovement({
   lot: string;
   quantity: number;
   comment?: string;
+  userId?: string;
+  username?: string;
 }) {
   const { error } = await supabase.from("stock_movements").insert({
     movement_type: type,
@@ -155,6 +161,8 @@ export async function insertStockMovement({
     lot: lot.trim(),
     quantity,
     comment: comment ?? "",
+    user_id: userId ?? null,
+    username: username ?? "",
   });
 
   if (error) {
