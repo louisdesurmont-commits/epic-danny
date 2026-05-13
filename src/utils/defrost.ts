@@ -55,6 +55,7 @@ export function regenerateDefrostNeedsData({
 
   const nextUnvalidatedLines: DefrostLine[] = otSkus.flatMap((sku) => {
     const product = assortmentBySku.get(sku);
+    const isInAssortment = Boolean(product);
 
     const stock = fridgeStock
       .filter((row) => row.sku.trim().toUpperCase() === sku)
@@ -71,10 +72,8 @@ export function regenerateDefrostNeedsData({
     const resolvedName =
       product?.name ?? orderNameBySku[sku] ?? existingOpenLine?.name ?? sku;
 
-    const isInAssortment =
-      existingOpenLine?.isInAssortment ?? Boolean(product);
-
     const baseUnitsPerCase = product?.unitsPerCase ?? 1;
+
     const unitsPerCase =
       !isInAssortment && (existingOpenLine?.unitsPerCaseOverride ?? 0) > 0
         ? existingOpenLine!.unitsPerCaseOverride!
@@ -119,6 +118,9 @@ export function regenerateDefrostNeedsData({
           transferQty: netNeed,
           ignored: existingOpenLine.ignored ?? false,
           isInAssortment,
+          unitsPerCaseOverride: !isInAssortment
+            ? existingOpenLine.unitsPerCaseOverride
+            : undefined,
           allocations:
             existingOpenLine.allocations.length > 0
               ? existingOpenLine.allocations.map((allocation, index) => ({
@@ -168,6 +170,7 @@ export function regenerateDefrostNeedsData({
       ot,
       target,
       isInAssortment: Boolean(product),
+      unitsPerCaseOverride: product ? undefined : line.unitsPerCaseOverride,
     };
   });
 
