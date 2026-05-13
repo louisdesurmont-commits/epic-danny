@@ -1,3 +1,10 @@
+import LoginScreen from "./screens/LoginScreen";
+import {
+  getCurrentAppUser,
+  signOut,
+  type AppUser,
+} from "./services/authService";
+
 import { clearAppData } from "./services/storage";
 import NavButton from "./components/NavButton";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
@@ -91,6 +98,22 @@ declare global {
 }
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const user = await getCurrentAppUser();
+        setCurrentUser(user);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    loadUser();
+  }, []);
+
   const {
     screen,
     setScreen,
@@ -186,6 +209,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
+
     const loadCatalogProducts = async () => {
       const { data, error } = await supabase
         .from("catalog_products")
@@ -217,9 +242,11 @@ export default function App() {
     };
 
     loadCatalogProducts();
-  }, [setAssortmentProducts]);
+  }, [currentUser, setAssortmentProducts]);
 
   useEffect(() => {
+    if (!currentUser) return;
+
     const loadStockData = async () => {
       const [stockRows, movementRows] = await Promise.all([
         loadStockLotsFromSupabase(),
@@ -236,9 +263,11 @@ export default function App() {
     };
 
     loadStockData();
-  }, [setFridgeStock, setMovements]);
+  }, [currentUser, setFridgeStock, setMovements]);
 
   useEffect(() => {
+    if (!currentUser) return;
+
     const loadTransferOrdersData = async () => {
       try {
         const rows = await loadTransferOrdersFromSupabase();
@@ -249,9 +278,11 @@ export default function App() {
     };
 
     loadTransferOrdersData();
-  }, [setTransferOrders]);
+  }, [currentUser, setTransferOrders]);
 
   useEffect(() => {
+    if (!currentUser) return;
+
     const loadDefrostData = async () => {
       try {
         const lines = await loadDefrostStateFromSupabase();
@@ -262,7 +293,7 @@ export default function App() {
     };
 
     loadDefrostData();
-  }, [setDefrostList]);
+  }, [currentUser, setDefrostList]);
 
   const remainingLines = useMemo(
     () => getRemainingDefrostLines(defrostList),
@@ -537,6 +568,8 @@ export default function App() {
         lot,
         quantity: adjustmentQty,
         comment,
+        userId: authenticatedUser.id,
+        username: authenticatedUser.username,
       });
 
       const { stockRows, movementRows } = await reloadStockAndMovements();
@@ -602,6 +635,8 @@ export default function App() {
         comment:
           comment ||
           `Inventaire : théorique ${theoreticalQty}, compté ${countedQty}`,
+        userId: authenticatedUser.id,
+        username: authenticatedUser.username,
       });
 
       const { stockRows, movementRows } = await reloadStockAndMovements();
@@ -1033,6 +1068,8 @@ export default function App() {
           lot: allocation.lot,
           quantity: allocation.qty,
           comment: `Validation décongélation ${line.id}`,
+          userId: authenticatedUser.id,
+          username: authenticatedUser.username,
         });
       }
 
@@ -1066,6 +1103,8 @@ export default function App() {
         lot: "-",
         quantity: 0,
         comment: `Besoin ignoré ${line.id}`,
+        userId: authenticatedUser.id,
+        username: authenticatedUser.username,
       });
 
       const nextList = defrostList.map((item) =>
@@ -1119,6 +1158,8 @@ export default function App() {
             lot: allocation.lot,
             quantity: allocation.qty,
             comment: `Validation décongélation ${line.id}`,
+            userId: authenticatedUser.id,
+            username: authenticatedUser.username,
           });
         }
       }
@@ -1144,22 +1185,62 @@ export default function App() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-4">
+        <div className="mx-auto mt-20 max-w-sm rounded-3xl bg-white p-6 text-sm shadow-sm">
+          Chargement...
+        </div>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginScreen onLogin={setCurrentUser} />;
+  }
+  const authenticatedUser = currentUser;
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className={`mx-auto px-4 py-4 ${getShellWidth(viewMode)}`}>
-        <header className="mb-4">
-          <h1 className="text-2xl font-semibold">
-            Décongélation & stock frigo
-          </h1>
-          <p className="text-sm text-slate-500">Vue simplifiée par écran</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Affichage détecté :{" "}
-            {viewMode === "mobile"
-              ? "Téléphone"
-              : viewMode === "tablet"
-              ? "Tablette"
-              : "Ordinateur"}
-          </p>
+        <header className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">
+              Décongélation & stock frigo
+            </h1>
+
+            <p className="text-sm text-slate-500">Vue simplifiée par écran</p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Affichage détecté :{" "}
+              {viewMode === "mobile"
+                ? "Téléphone"
+                : viewMode === "tablet"
+                ? "Tablette"
+                : "Ordinateur"}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 self-start rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div className="flex flex-col">
+              <span className="text-xs text-slate-400">Connecté</span>
+
+              <span className="text-sm font-medium text-slate-700">
+                {authenticatedUser.username}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+              onClick={async () => {
+                await signOut();
+                setCurrentUser(null);
+              }}
+            >
+              Déconnexion
+            </button>
+          </div>
         </header>
 
         <section className="sticky top-0 z-10 -mx-4 mb-4 border-b border-slate-200 bg-slate-100/95 px-4 py-3 backdrop-blur">

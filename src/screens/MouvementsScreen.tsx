@@ -139,6 +139,7 @@ export default function MouvementsScreen({
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-3">Date / heure</th>
+                <th className="px-3 py-3">Utilisateur</th>
                 <th className="px-3 py-3">Type</th>
                 <th className="px-3 py-3">Article</th>
                 <th className="px-3 py-3">Description</th>
@@ -156,6 +157,10 @@ export default function MouvementsScreen({
                 >
                   <td className="px-3 py-3 whitespace-nowrap">
                     {formatDateTime(movement.createdAt)}
+                  </td>
+
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    {movement.username || "-"}
                   </td>
 
                   <td className="px-3 py-3 whitespace-nowrap">

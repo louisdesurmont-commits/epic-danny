@@ -6,7 +6,13 @@ export type AppUser = {
 };
 
 function usernameToEmail(username: string) {
-  return `${username.trim().toLowerCase()}@app.local`;
+  const value = username.trim().toLowerCase();
+
+  if (value.includes("@")) {
+    return value;
+  }
+
+  return `${value}@app.local`;
 }
 
 export async function signInWithUsername(
