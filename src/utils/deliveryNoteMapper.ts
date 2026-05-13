@@ -49,7 +49,7 @@ export function mapShipmentToDeliveryNote(
     mode: "",
 
     originWarehouse: "ELB_769_00",
-    editedBy: "",
+    editedBy: shipment.validatedBy ?? "",
     transferStep: "Confirmed",
 
     destinationCode: shipment.boutiqueCode,

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import type { AppUser } from "../services/authService";
+import { insertStockMovement } from "../services/supabaseStockService";
 import type {
   FridgeStockRow,
   MovementRow,
@@ -29,6 +31,7 @@ type Params = {
   setShipments: React.Dispatch<React.SetStateAction<Shipment[]>>;
   setFridgeStock: React.Dispatch<React.SetStateAction<FridgeStockRow[]>>;
   setMovements: React.Dispatch<React.SetStateAction<MovementRow[]>>;
+  currentUser: AppUser | null;
 };
 
 export function useShipmentWorkflow({
@@ -38,6 +41,7 @@ export function useShipmentWorkflow({
   setShipments,
   setFridgeStock,
   setMovements,
+  currentUser,
 }: Params) {
   const [selectedShipmentDate, setSelectedShipmentDate] = useState<
     string | null
@@ -192,7 +196,7 @@ export function useShipmentWorkflow({
     );
   }
 
-  function handleValidateShipment() {
+  async function handleValidateShipment() {
     if (shipmentDraftLines.length === 0) return;
 
     const { errors, warnings } = validateShipmentDraft(shipmentDraftLines);
@@ -214,13 +218,38 @@ export function useShipmentWorkflow({
       }
     }
 
-    const shipment = buildShipmentFromDraft(shipmentDraftLines);
+    if (!currentUser) {
+      alert("Utilisateur non connecté. Impossible de valider l'expédition.");
+      return;
+    }
+
+    const shipment = {
+      ...buildShipmentFromDraft(shipmentDraftLines),
+      validatedBy: currentUser.username,
+      validatedByUserId: currentUser.id,
+      validatedAt: new Date().toISOString(),
+    };
 
     setShipments((prev) => [shipment, ...prev]);
 
     setFridgeStock((prev) => applyShipmentToStock(prev, shipment));
 
-    setMovements((prev) => [...buildShipmentMovements(shipment), ...prev]);
+    const shipmentMovements = buildShipmentMovements(shipment);
+
+    for (const movement of shipmentMovements) {
+      await insertStockMovement({
+        type: "shipment",
+        sku: movement.sku,
+        productName: movement.name,
+        lot: movement.lot,
+        quantity: movement.qty,
+        comment: movement.reason,
+        userId: shipment.validatedByUserId,
+        username: shipment.validatedBy,
+      });
+    }
+
+    setMovements((prev) => [...shipmentMovements, ...prev]);
 
     setSelectedShipmentOtNumber(null);
     setSelectedShipmentBoutiqueKey(null);

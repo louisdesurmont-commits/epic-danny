@@ -43,6 +43,9 @@ export type Shipment = {
   lines: ShipmentLine[];
   createdAt: string;
   status: ShipmentStatus;
+  validatedBy?: string;
+  validatedByUserId?: string;
+  validatedAt?: string;
 };
 
 export type ShipmentSuggestionMode =

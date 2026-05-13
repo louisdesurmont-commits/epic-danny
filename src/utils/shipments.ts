@@ -495,10 +495,11 @@ export function buildShipmentMovements(shipment: Shipment): MovementRow[] {
       qty: -alloc.qty,
       reason: `Expédition OT ${shipment.otNumber}`,
       createdAt: now,
+      userId: shipment.validatedByUserId,
+      username: shipment.validatedBy ?? "",
     }))
   );
 }
-
 export function recomputeShipmentDraftLines(
   lines: ShipmentLineDraft[]
 ): ShipmentLineDraft[] {

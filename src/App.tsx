@@ -189,6 +189,7 @@ export default function App() {
     setShipments,
     setFridgeStock,
     setMovements,
+    currentUser,
   });
 
   const openTransferOrders = useMemo(
