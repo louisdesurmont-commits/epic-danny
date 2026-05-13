@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppUser } from "../services/authService";
-import { insertStockMovement } from "../services/supabaseStockService";
+import {
+  getStockLotBySkuLot,
+  insertStockMovement,
+  reloadStockAndMovements,
+  upsertStockLot,
+} from "../services/supabaseStockService";
 import type {
   FridgeStockRow,
   MovementRow,
@@ -232,7 +237,27 @@ export function useShipmentWorkflow({
 
     setShipments((prev) => [shipment, ...prev]);
 
-    setFridgeStock((prev) => applyShipmentToStock(prev, shipment));
+    for (const line of shipment.lines) {
+      for (const allocation of line.allocations) {
+        if (!allocation.lot || allocation.qty <= 0) continue;
+
+        const existingLot = await getStockLotBySkuLot({
+          sku: line.sku,
+          lot: allocation.lot,
+        });
+
+        const currentQty = existingLot?.quantity ?? 0;
+        const nextQty = Math.max(currentQty - allocation.qty, 0);
+
+        await upsertStockLot({
+          sku: line.sku,
+          productName: line.name,
+          lot: allocation.lot,
+          quantity: nextQty,
+          dlc: existingLot?.dlc ?? undefined,
+        });
+      }
+    }
 
     const shipmentMovements = buildShipmentMovements(shipment);
 
@@ -249,7 +274,10 @@ export function useShipmentWorkflow({
       });
     }
 
-    setMovements((prev) => [...shipmentMovements, ...prev]);
+    const { stockRows, movementRows } = await reloadStockAndMovements();
+
+    if (stockRows) setFridgeStock(stockRows);
+    if (movementRows) setMovements(movementRows);
 
     setSelectedShipmentOtNumber(null);
     setSelectedShipmentBoutiqueKey(null);
