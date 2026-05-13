@@ -1,260 +1,391 @@
-# 🧊 App Traca — Gestion décongélation & stock frigo
+# App Traça
 
-Application web métier dédiée à la gestion :
+Application web de gestion simplifiée des flux agroalimentaires :
 
-- des besoins de décongélation
-- des stocks frigo par lot
-- des expéditions (OT)
-- des mouvements de stock
-- de la traçabilité (lots)
+- décongélation,
+- stock frigo,
+- expéditions,
+- mouvements de stock,
+- import d’OT,
+- traçabilité par lots,
+- journal des opérations,
+- authentification utilisateurs.
 
----
+Le projet est conçu pour être :
 
-## 🚀 Objectif
-
-Faciliter le pilotage opérationnel en cuisine / production :
-
-- anticiper les besoins de décongélation
-- suivre précisément les stocks par lot
-- tracer tous les mouvements (inventaire, ajustement, expédition)
-- sécuriser les flux en cas de rappel produit
-
----
-
-## 🧩 Fonctionnalités principales
-
-### 📦 1. Gamme produits
-
-- Import des produits via fichier
-- Gestion des cibles journalières (Lun → Dim)
-- Modification rapide des paramètres produit
+- simple à utiliser sur le terrain,
+- rapide sur mobile/tablette,
+- exploitable par des équipes opérationnelles non techniques,
+- traçable pour les besoins qualité et sécurité alimentaire.
 
 ---
 
-### 📥 2. Import OT
+# Stack technique
 
-- Import des ordres de transfert
-- Visualisation par boutique / OT
-- Consolidation des quantités par SKU
+## Frontend
 
----
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
 
-### ❄️ 3. Besoins de décongélation
+## Backend / Base de données
 
-- Calcul automatique des besoins
-- Basé sur :
-  - stock actuel
-  - OT à venir
-  - cibles journalières
-- Bouton de recalcul manuel
+- Supabase
 
----
+  - PostgreSQL
+  - Authentification utilisateurs
+  - Row Level Security (RLS)
 
-### ✅ 4. Validation décongélation
+## Fonctionnalités complémentaires
 
-- Allocation par lot
-- Validation / rejet des lignes
-- Génération automatique :
-  - des mouvements
-  - des entrées en stock frigo
+- OCR via Tesseract.js
+- Génération PDF
+- Gestion des états via hooks React
 
 ---
 
-### 🚚 5. Expéditions
+# Fonctionnalités principales
 
-- Sélection :
-  - date
-  - boutique
-  - OT
-- Allocation intelligente par lot :
-  - mono-lot automatique
-  - multi-lots
-- Gestion des cas :
-  - complet
-  - partiel
-  - rupture totale
-- Confirmation avec alertes si rupture
+## 1. Gestion du stock frigo
 
----
+Le stock est géré par :
 
-### 🧊 6. Stock frigo
+- numéro d’article,
+- lot,
+- DLC,
+- quantité.
 
-- Vue consolidée par SKU / lot
-- Ajustements manuels
-- Inventaires :
-  - comparaison théorique vs réel
-  - calcul automatique de l’écart
+Chaque ligne de stock représente un lot distinct.
 
----
+Fonctions disponibles :
 
-### 🔄 7. Mouvements
+- ajustement manuel,
+- inventaire,
+- entrées,
+- sorties,
+- consommation par décongélation,
+- consommation par expédition.
 
-- Historique complet
-- Types :
-  - entrée frigo
-  - sortie OT
-  - ajustement
-  - inventaire
-  - expédition
-- Filtres :
-  - type
-  - SKU
-  - lot
-  - description
+Le stock est persisté dans Supabase.
 
 ---
 
-## 🧠 Architecture (mise à jour)
+## 2. Journal des mouvements
 
-### 📁 Organisation du projet
+Tous les mouvements sont historisés :
 
+- date,
+- heure,
+- utilisateur,
+- type de mouvement,
+- lot,
+- article,
+- quantité,
+- commentaire.
+
+Types de mouvements :
+
+- entrée frigo,
+- sortie OT,
+- ajustement,
+- inventaire,
+- expédition.
+
+Le journal est filtrable par :
+
+- type,
+- article,
+- description,
+- lot.
+
+---
+
+## 3. Décongélation
+
+Le module de décongélation permet :
+
+- de calculer les besoins de décongélation,
+- de proposer automatiquement les quantités,
+- de sélectionner les lots,
+- de valider ou ignorer les besoins,
+- de tracer les opérations.
+
+Fonctionnalités :
+
+- validation unitaire,
+- validation en masse,
+- gestion multi-lots,
+- contrôle des quantités,
+- scan d’étiquette,
+- OCR des lots.
+
+Les besoins sont persistés dans Supabase.
+
+---
+
+## 4. OCR / Scan d’étiquette
+
+Le système permet :
+
+- l’ouverture de l’appareil photo,
+- le scan d’étiquettes,
+- la reconnaissance OCR,
+- l’extraction du code article,
+- l’extraction du numéro de lot.
+
+Le parser reconstruit les lots selon les règles métier définies.
+
+Utilisation :
+
+- scan global,
+- pré-remplissage automatique des lots,
+- accélération des opérations terrain.
+
+---
+
+## 5. Gestion des OT (Transfer Orders)
+
+Les OT peuvent être importés.
+
+Le système :
+
+- stocke les OT dans Supabase,
+- gère les lignes d’OT,
+- calcule les besoins,
+- suit les statuts.
+
+Les OT servent de base :
+
+- aux besoins de décongélation,
+- aux préparations,
+- aux expéditions.
+
+---
+
+## 6. Expéditions
+
+Le module expédition permet :
+
+- de sélectionner les OT ouverts,
+- de préparer les allocations de lots,
+- de gérer les ruptures,
+- de valider les expéditions.
+
+Fonctionnalités :
+
+- allocation automatique,
+- allocation multi-lots,
+- validation avec contrôle,
+- gestion des quantités partielles,
+- suivi des statuts.
+
+Les expéditions génèrent automatiquement des mouvements de stock.
+
+---
+
+## 7. Génération PDF
+
+L’application génère plusieurs documents PDF :
+
+- bons de livraison,
+- listes de préparation,
+- documents imprimables.
+
+Fonctionnalités :
+
+- mise en page optimisée terrain,
+- gestion des lots,
+- gestion des descriptions longues,
+- format impression.
+
+---
+
+## 8. Authentification utilisateurs
+
+L’accès à l’application nécessite :
+
+- un compte utilisateur,
+- un mot de passe.
+
+L’authentification est gérée via Supabase Auth.
+
+Chaque utilisateur possède :
+
+- un compte Auth,
+- un profil applicatif.
+
+Les opérations sont tracées avec :
+
+- user_id,
+- username,
+- date,
+- heure.
+
+---
+
+# Sécurité
+
+## Row Level Security (RLS)
+
+Les tables Supabase sont protégées par RLS.
+
+Seuls les utilisateurs authentifiés peuvent accéder aux données.
+
+Tables sécurisées :
+
+- catalog_products
+- stock_lots
+- stock_movements
+- transfer_orders
+- transfer_order_lines
+- defrost_state
+- user_profiles
+
+---
+
+# Structure du projet
+
+## Dossiers principaux
+
+```text
 src/
-├── components/
-├── screens/
-├── hooks/
-│ ├── useAppData.ts ← état global + persistance
-│ ├── useStockOperations.ts ← logique stock
-│ ├── useMovementFilters.ts ← filtres mouvements
-├── services/
-│ ├── appDataService.ts ← localStorage
-│ ├── fileImportService.ts
-├── utils/
-│ ├── fridgeStockMutations.ts
-│ ├── shipments.ts
-│ ├── defrost.ts
-│ ├── transferOrders.ts
-├── types.ts ← source unique des types
-├── App.tsx ← orchestration UI
+ ├── components/
+ ├── hooks/
+ ├── lib/
+ ├── screens/
+ ├── services/
+ ├── types/
+ ├── utils/
+```
+
+## Services Supabase
+
+### `supabaseStockService.ts`
+
+Gestion :
+
+- stock,
+- mouvements,
+- synchronisation.
+
+### `supabaseTransferOrdersService.ts`
+
+Gestion :
+
+- OT,
+- lignes d’OT,
+- imports.
+
+### `supabaseDefrostService.ts`
+
+Gestion :
+
+- état de décongélation.
+
+### `authService.ts`
+
+Gestion :
+
+- connexion,
+- session utilisateur,
+- déconnexion.
 
 ---
 
-## 🔑 Principes d’architecture
+# Installation
 
-### 1. Séparation claire des responsabilités
+## 1. Installer les dépendances
 
-- `App.tsx` → orchestration UI uniquement
-- `hooks/` → logique métier par domaine
-- `utils/` → fonctions pures
-- `services/` → accès données (localStorage, import)
+```bash
+npm install
+```
 
----
+## 2. Variables d’environnement
 
-### 2. Source unique des types
+Créer un fichier `.env` :
 
-Tous les types sont centralisés dans :
-src/types.ts
-
-➡️ Aucun type ne doit être défini dans un hook ou un composant
-
----
-
-### 3. Gestion centralisée des données
-
-Le hook :
-useAppData.ts
-
-gère :
-
-- le state principal
-- le chargement initial
-- la persistance automatique
-
-➡️ `App.tsx` ne gère plus directement le stockage
+```env
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+```
 
 ---
 
-### 4. Logique métier isolée
+# Supabase
 
-Exemples :
+## Tables principales
 
-- `useStockOperations` → ajustements + inventaires
-- `useMovementFilters` → filtrage UI
-- `shipments.ts` → logique expédition
-
-➡️ facilite maintenance et évolutions
-
----
-
-## 💾 Persistance des données
-
-- Stockage : **localStorage**
-- Clé : `oai_app_data_v1`
-- Géré par :
-  src/services/appDataService.ts
-
-Fonctions principales :
-
-- `loadInitialAppData`
-- `persistAppData`
-- `resetAppData`
+- catalog_products
+- stock_lots
+- stock_movements
+- transfer_orders
+- transfer_order_lines
+- defrost_state
+- user_profiles
 
 ---
 
-## ⚠️ Règles importantes
+# Authentification
 
-### 🔒 Traçabilité
+## Création d’un utilisateur
 
-- Tous les mouvements sont historisés
-- Les lots sont obligatoires
+Dans Supabase :
 
-### 🚫 Cohérence métier
+Authentication → Users → Add user
 
-- Pas de surexpédition
-- Gestion explicite des ruptures
-- Quantité expédiée = somme des allocations
+Puis créer le profil :
 
----
-
-## 🧪 Tests manuels recommandés
-
-Après modification :
-
-- ajustement stock
-- inventaire
-- validation décongélation
-- expédition avec rupture
-- filtres mouvements
-
-Puis recharger la page pour vérifier la persistance
+```sql
+insert into user_profiles (id, username)
+select id, 'Nom utilisateur'
+from auth.users
+where email = 'utilisateur@entreprise.com';
+```
 
 ---
 
-## 🔜 Roadmap technique (suggestions)
+# Développement
 
-- [ ] Extraction du workflow expéditions (`useShipmentWorkflow`)
-- [ ] OCR des étiquettes (SKU + lot)
-- [ ] Backend/API (remplacer localStorage)
-- [ ] Authentification utilisateurs
-- [ ] Export PDF / CSV
-- [ ] Gestion multi-sites
+## Lancer l’application
 
----
-
-## 👨‍🍳 Contexte métier
-
-Application conçue pour un usage terrain :
-
-- production alimentaire
-- gestion de lots
-- contraintes de traçabilité fortes
-- volume opérationnel quotidien élevé
+```bash
+npm run dev
+```
 
 ---
 
-## ⚙️ Stack technique
+# Déploiement
 
-- React + TypeScript
-- Architecture modulaire par hooks
-- Aucun backend (actuellement)
-- Déploiement possible via Vercel / Netlify
+Le frontend peut être déployé sur :
+
+- Vercel,
+- Netlify,
+- Codesandbox,
+- autre hébergement statique.
+
+Supabase héberge :
+
+- base PostgreSQL,
+- authentification,
+- API.
 
 ---
 
-## 📌 Notes
+# Philosophie produit
 
-Projet en évolution rapide.  
-Les refactorings récents ont permis :
+L’objectif du projet est de fournir un outil :
 
-- une meilleure séparation des responsabilités
-- une réduction de la complexité de `App.tsx`
-- une base solide pour l’ajout de nouvelles fonctionnalités
+- simple,
+- rapide,
+- orienté terrain,
+- adapté à l’agroalimentaire,
+- traçable,
+- mobile-first.
+
+Le focus est mis sur :
+
+- l’efficacité opérationnelle,
+- la simplicité utilisateur,
+- la sécurité alimentaire,
+- la traçabilité des lots.
