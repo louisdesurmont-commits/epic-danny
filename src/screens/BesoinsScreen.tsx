@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { DefrostLine, Product, ViewMode } from "../types";
 import { computeTransferNeed } from "../utils/stock";
+import { generateDefrostPreparationPdf } from "../utils/defrostPreparationPdf";
 
 type Props = {
   todayTargetKey: string;
@@ -263,7 +264,12 @@ export default function BesoinsScreen({
             Recalculer les besoins
           </button>
 
-          <button className="text-sm" type="button">
+          <button
+            className="rounded border px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            disabled={filteredAndSortedRows.length === 0}
+            onClick={() => generateDefrostPreparationPdf(filteredAndSortedRows)}
+          >
             Imprimer A4
           </button>
         </div>

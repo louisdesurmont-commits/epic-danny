@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "pdf-lib": "^1.17.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -19,6 +21,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@types/jspdf": "^2.0.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
