@@ -68,8 +68,12 @@ export default function StockScreen({
     [fridgeStock]
   );
 
+  const visibleStock = useMemo(() => {
+    return fridgeStock.filter((row) => row.qty > 0);
+  }, [fridgeStock]);
+
   const filteredStock = useMemo(() => {
-    return fridgeStock.filter((row) => {
+    return visibleStock.filter((row) => {
       return (
         (!filters.sku ||
           row.sku.toLowerCase().includes(filters.sku.toLowerCase())) &&
@@ -79,7 +83,7 @@ export default function StockScreen({
           row.lot.toLowerCase().includes(filters.lot.toLowerCase()))
       );
     });
-  }, [fridgeStock, filters]);
+  }, [visibleStock, filters]);
 
   const isKnownManualSku = assortmentProducts.some(
     (product) =>

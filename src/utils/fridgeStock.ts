@@ -12,11 +12,13 @@ export function groupFridgeStockBySku(
   rows: FridgeStockRow[]
 ): Array<[string, FridgeStockRow[]]> {
   return Object.entries(
-    rows.reduce<Record<string, FridgeStockRow[]>>((acc, row) => {
-      if (!acc[row.sku]) acc[row.sku] = [];
-      acc[row.sku].push(row);
-      return acc;
-    }, {})
+    rows
+      .filter((row) => row.qty > 0)
+      .reduce<Record<string, FridgeStockRow[]>>((acc, row) => {
+        if (!acc[row.sku]) acc[row.sku] = [];
+        acc[row.sku].push(row);
+        return acc;
+      }, {})
   );
 }
 
