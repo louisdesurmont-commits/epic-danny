@@ -31,7 +31,7 @@ export function useAppData(): UseAppDataResult {
   const [appData] = useState(() => loadAppData());
 
   const [screen, setScreen] = useState<Screen>(appData.screen);
-  const [shipments, setShipments] = useState<Shipment[]>(appData.shipments);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
 
   const [assortmentProducts, setAssortmentProducts] = useState<Product[]>([]);
   const [transferOrders, setTransferOrders] = useState<TransferOrderLine[]>([]);
@@ -42,9 +42,8 @@ export function useAppData(): UseAppDataResult {
   useEffect(() => {
     saveAppData({
       screen,
-      shipments,
     });
-  }, [screen, shipments]);
+  }, [screen]);
 
   return {
     screen,

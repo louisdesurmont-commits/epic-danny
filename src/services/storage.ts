@@ -1,8 +1,7 @@
-import type { Shipment, Screen } from "../types";
+import type { Screen } from "../types";
 
 export type AppData = {
   screen: Screen;
-  shipments: Shipment[];
 };
 
 const STORAGE_KEY = "oai_app_data_v1";
@@ -10,7 +9,6 @@ const STORAGE_KEY = "oai_app_data_v1";
 export function getDefaultAppData(): AppData {
   return {
     screen: "gamme",
-    shipments: [],
   };
 }
 
@@ -30,7 +28,6 @@ export function loadAppData(): AppData {
 
     return {
       screen: parsed.screen ?? "gamme",
-      shipments: parsed.shipments ?? [],
     };
   } catch (error) {
     console.error("Erreur loadAppData", error);
