@@ -1218,25 +1218,45 @@ export default function App() {
   }
   const authenticatedUser = currentUser;
 
+  const isProd = import.meta.env.VITE_APP_ENV === "prod";
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className={`mx-auto px-4 py-4 ${getShellWidth(viewMode)}`}>
-        <header className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">
-              Décongélation & stock frigo
-            </h1>
+        <header
+          className={`mb-4 flex flex-col gap-3 rounded-3xl border p-4 shadow-sm md:flex-row md:items-start md:justify-between ${
+            isProd
+              ? "border-blue-200 bg-blue-50"
+              : "border-amber-200 bg-amber-50"
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className={`rounded-lg px-3 py-1 text-sm font-bold text-white ${
+                isProd ? "bg-green-600" : "bg-amber-500"
+              }`}
+            >
+              {isProd ? "PROD" : "DEV / PRÉ-PROD"}
+            </div>
 
-            <p className="text-sm text-slate-500">Vue simplifiée par écran</p>
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">
+                MacTrace
+              </h1>
 
-            <p className="mt-1 text-xs text-slate-400">
-              Affichage détecté :{" "}
-              {viewMode === "mobile"
-                ? "Téléphone"
-                : viewMode === "tablet"
-                ? "Tablette"
-                : "Ordinateur"}
-            </p>
+              <p className="text-sm font-medium text-slate-600">
+                {isProd ? "Base de production" : "Base dev / pré-prod"}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">
+                Affichage détecté :{" "}
+                {viewMode === "mobile"
+                  ? "Téléphone"
+                  : viewMode === "tablet"
+                  ? "Tablette"
+                  : "Ordinateur"}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 self-start rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
