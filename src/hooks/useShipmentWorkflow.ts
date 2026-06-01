@@ -6,6 +6,7 @@ import {
   reloadStockAndMovements,
   upsertStockLot,
 } from "../services/supabaseStockService";
+import { insertShipmentToSupabase } from "../services/supabaseShipmentsService";
 import type {
   FridgeStockRow,
   MovementRow,
@@ -235,6 +236,7 @@ export function useShipmentWorkflow({
       validatedAt: new Date().toISOString(),
     };
 
+    await insertShipmentToSupabase(shipment);
     setShipments((prev) => [shipment, ...prev]);
 
     for (const line of shipment.lines) {

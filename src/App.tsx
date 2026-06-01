@@ -65,6 +65,8 @@ import {
   getStockLotBySkuLot,
 } from "./services/supabaseStockService";
 
+import { loadShipmentsFromSupabase } from "./services/supabaseShipmentsService";
+
 import {
   loadTransferOrdersFromSupabase,
   replaceTransferOrdersInSupabase,
@@ -280,6 +282,21 @@ export default function App() {
 
     loadTransferOrdersData();
   }, [currentUser, setTransferOrders]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadShipmentsData = async () => {
+      try {
+        const rows = await loadShipmentsFromSupabase();
+        setShipments(rows);
+      } catch (error) {
+        console.error("Erreur chargement expéditions :", error);
+      }
+    };
+
+    loadShipmentsData();
+  }, [currentUser, setShipments]);
 
   useEffect(() => {
     if (!currentUser) return;
